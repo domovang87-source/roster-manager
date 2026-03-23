@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Check, Edit2, MessageSquare, Save } from "lucide-react";
+import { formatScheduledFor } from "../../../lib/format-scheduled";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 
 type UnreadItem = {
@@ -17,7 +18,37 @@ type DraftItem = {
   name: string;
   tier: "B" | "C";
   draftText: string;
+  phoneNumber?: string;
+  scheduledFor: string | null;
 };
+
+type RecentConvoItem = {
+  prospectId: string;
+  name: string;
+  lastMessageBody: string;
+  lastMessageAt: string;
+  direction: "inbound" | "outbound";
+};
+
+const DEMO_RECENT_CONVOS: RecentConvoItem[] = [
+  {
+    prospectId: "demo-ava",
+    name: "Ava",
+    lastMessageBody: "Hey! Are we still on for tonight?",
+    lastMessageAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    direction: "inbound",
+  },
+  {
+    prospectId: "demo-cora",
+    name: "Cora",
+    lastMessageBody: "I got you a coffee :)",
+    lastMessageAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    direction: "outbound",
+  },
+];
+
+const DEMO_SYNOPSIS =
+  "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours.";
 
 export default function HomePage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(
@@ -27,11 +58,16 @@ export default function HomePage() {
   const [loadingNarrative, setLoadingNarrative] = React.useState(true);
   const [unreadAList, setUnreadAList] = React.useState<UnreadItem[]>([]);
   const [draftDeck, setDraftDeck] = React.useState<DraftItem[]>([]);
+  const [recentConvos, setRecentConvos] = React.useState<RecentConvoItem[]>([]);
+  const [rosterCount, setRosterCount] = React.useState<number>(0);
   const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
   const [isApproving, setIsApproving] = React.useState(false);
   const [fadeDrafts, setFadeDrafts] = React.useState(false);
+  const [exampleDraftText, setExampleDraftText] = React.useState(
+    "You're the cutest."
+  );
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -57,11 +93,11 @@ export default function HomePage() {
         const data = (await res.json()) as { synopsis?: string };
         setSynopsis(
           data.synopsis ??
-            "No inbound A-Tier texts or successful B/C automations logged yet."
+            "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
         );
       } catch {
         setSynopsis(
-          "No inbound A-Tier texts or successful B/C automations logged yet."
+          "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
         );
       } finally {
         setLoadingNarrative(false);
@@ -103,14 +139,29 @@ export default function HomePage() {
     };
 
     const loadDraftDeck = async () => {
-      const { data } = await client
-        .from("scheduled_replies")
-        .select("id,draft_text,tier,prospects(name)")
-        .eq("status", "scheduled")
-        .in("tier", ["B", "C"])
-        .limit(20);
+      const [repliesRes, rulesRes] = await Promise.all([
+        client
+          .from("scheduled_replies")
+          .select("id,draft_text,tier,scheduled_for,prospects(name,phone_number)")
+          .eq("status", "scheduled")
+          .in("tier", ["B", "C"])
+          .limit(50),
+        client
+          .from("tier_rules")
+          .select("tier,auto_respond")
+          .in("tier", ["B", "C"]),
+      ]);
 
-      const mapped = (data ?? [])
+      const rules = (rulesRes.data ?? []).reduce(
+        (acc, r) => {
+          acc[r.tier as "B" | "C"] = Boolean(r.auto_respond);
+          return acc;
+        },
+        {} as Record<string, boolean>
+      );
+
+      const mapped = (repliesRes.data ?? [])
+        .filter((row) => rules[row.tier as "B" | "C"] === true)
         .map((row) => {
           const prospect = Array.isArray(row.prospects)
             ? row.prospects[0]
@@ -121,6 +172,8 @@ export default function HomePage() {
             name: prospect.name as string,
             tier: row.tier as "B" | "C",
             draftText: row.draft_text as string,
+            phoneNumber: prospect.phone_number ?? undefined,
+            scheduledFor: (row.scheduled_for as string | null) ?? null,
           };
         })
         .filter(Boolean) as DraftItem[];
@@ -134,9 +187,51 @@ export default function HomePage() {
       );
     };
 
+    const loadRosterCount = async () => {
+      const { count } = await client
+        .from("prospects")
+        .select("*", { count: "exact", head: true });
+      setRosterCount(count ?? 0);
+    };
+
+    const loadRecentConvos = async () => {
+      const { data } = await client
+        .from("messages")
+        .select("id,body,created_at,direction,prospect_id,prospects(name)")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      const latestByProspect = new Map<string, RecentConvoItem>();
+      for (const row of data ?? []) {
+        const prospectId = row.prospect_id as string;
+        if (latestByProspect.has(prospectId)) continue;
+        const prospect = Array.isArray(row.prospects)
+          ? row.prospects[0]
+          : row.prospects;
+        if (!prospect?.name) continue;
+        const body = (row.body as string) || "";
+        latestByProspect.set(prospectId, {
+          prospectId,
+          name: prospect.name as string,
+          lastMessageBody: body.length > 80 ? `${body.slice(0, 80)}…` : body,
+          lastMessageAt: row.created_at as string,
+          direction: row.direction as "inbound" | "outbound",
+        });
+      }
+      setRecentConvos(
+        Array.from(latestByProspect.values()).sort(
+          (a, b) =>
+            new Date(b.lastMessageAt).getTime() -
+            new Date(a.lastMessageAt).getTime()
+        )
+      );
+    };
+
     loadNarrative();
     loadUnreadAList();
     loadDraftDeck();
+    loadRecentConvos();
+    loadRosterCount();
   }, []);
 
   const handleSaveDraft = async (draftId: string) => {
@@ -179,7 +274,7 @@ export default function HomePage() {
 
       setFadeDrafts(true);
       setSynopsis(
-        "Automations dispatched. B/C-Tier replies sent with zero friction."
+        "Automations dispatched. B/C Tier replies sent with zero friction."
       );
 
       setTimeout(() => {
@@ -205,7 +300,7 @@ export default function HomePage() {
               AI Summary
             </p>
             <p className="text-sm text-[var(--rm-text-muted)]">
-              {loadingNarrative ? "Generating summary..." : synopsis}
+              {loadingNarrative ? "Generating summary..." : (recentConvos.length === 0 ? DEMO_SYNOPSIS : synopsis)}
             </p>
           </div>
         </div>
@@ -213,7 +308,7 @@ export default function HomePage() {
           href="/roster"
           className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
         >
-          {unreadAList.length + draftDeck.length} Prospects
+          {rosterCount} Prospects
         </Link>
       </header>
 
@@ -226,7 +321,7 @@ export default function HomePage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            A-Tier Pending
+            A Tier Incoming
           </p>
         </div>
         <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
@@ -273,7 +368,7 @@ export default function HomePage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            Draft Deck
+            B/C Tier Outbound Text Drafts
           </p>
           {draftDeck.length > 0 ? (
             <button
@@ -297,26 +392,48 @@ export default function HomePage() {
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold">Cora</p>
                 <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  C-Tier
+                  C-Tier · {formatScheduledFor(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString())}
                 </span>
               </div>
-              <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
-                Thanks for reaching out. I will reply when I can.
-              </p>
+              {editingDraftId === "example" ? (
+                <textarea
+                  value={exampleDraftText}
+                  onChange={(e) => setExampleDraftText(e.target.value)}
+                  rows={4}
+                  className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
+                />
+              ) : (
+                <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
+                  {exampleDraftText}
+                </p>
+              )}
               <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                <a
+                  href="sms:+15555551234"
+                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
                 >
-                  <Edit2 size={14} strokeWidth={1.25} />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                >
-                  Cancel
-                </button>
+                  <MessageSquare size={14} strokeWidth={1.25} />
+                  Text
+                </a>
+                {editingDraftId === "example" ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditingDraftId(null)}
+                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                  >
+                    <Save size={14} strokeWidth={1.25} />
+                    Done
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingDraftId("example")}
+                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                  >
+                    <Edit2 size={14} strokeWidth={1.25} />
+                    Edit
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -330,7 +447,7 @@ export default function HomePage() {
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold">{draft.name}</p>
                   <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    {draft.tier}-Tier
+                    {draft.tier}-Tier · {formatScheduledFor(draft.scheduledFor)}
                   </span>
                 </div>
                 {editingDraftId === draft.id ? (
@@ -351,15 +468,33 @@ export default function HomePage() {
                   </p>
                 )}
                 <div className="mt-3 flex items-center gap-2">
-                  {editingDraftId === draft.id ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSaveDraft(draft.id)}
-                      className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                  {draft.phoneNumber ? (
+                    <a
+                      href={`sms:${draft.phoneNumber}`}
+                      className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
                     >
-                      <Save size={14} strokeWidth={1.25} />
-                      Save
-                    </button>
+                      <MessageSquare size={14} strokeWidth={1.25} />
+                      Text
+                    </a>
+                  ) : null}
+                  {editingDraftId === draft.id ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveDraft(draft.id)}
+                        className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                      >
+                        <Save size={14} strokeWidth={1.25} />
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingDraftId(null)}
+                        className="border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                      >
+                        Cancel
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"
@@ -370,18 +505,51 @@ export default function HomePage() {
                       Edit
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                  >
-                    Cancel
-                  </button>
                 </div>
               </div>
             ))
           )}
         </div>
       </section>
+
+      <section className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
+          Recent Convos
+        </p>
+        <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
+          {(recentConvos.length === 0 ? DEMO_RECENT_CONVOS : recentConvos).map((convo) => (
+            <Link
+              key={convo.prospectId}
+              href="/roster"
+              className="flex items-start justify-between gap-3 border-b border-[var(--rm-border)] pb-2 last:border-0 last:pb-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{convo.name}</p>
+                <p className="truncate text-xs text-[var(--rm-text-muted)]">
+                  {convo.lastMessageBody || "(no preview)"}
+                </p>
+              </div>
+              <p className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                {formatRelativeTime(convo.lastMessageAt)}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
+}
+
+function formatRelativeTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const min = Math.floor(diffMs / 60_000);
+  const hrs = Math.floor(diffMs / 3_600_000);
+  const days = Math.floor(diffMs / 86_400_000);
+  if (min < 1) return "now";
+  if (min < 60) return `${min}m ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }

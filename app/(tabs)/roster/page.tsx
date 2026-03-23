@@ -2,7 +2,7 @@
 
 import React from "react";
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/core";
-import { Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 
@@ -13,6 +13,7 @@ type Prospect = {
   name: string;
   note?: string;
   tier: Tier;
+  phoneNumber?: string;
 };
 
 type SimulationResponse = {
@@ -20,6 +21,13 @@ type SimulationResponse = {
   summary?: string;
   suggestedReply?: string;
   autoReply?: string;
+};
+
+type MessageItem = {
+  id: string;
+  direction: "inbound" | "outbound";
+  body: string;
+  created_at: string;
 };
 
 const tierOrder: Tier[] = ["A", "B", "C"];
@@ -47,6 +55,7 @@ export default function RosterPage() {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [newTier, setNewTier] = React.useState<Tier>("B");
+  const [newPhone, setNewPhone] = React.useState("");
   const [isSaving, setIsSaving] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
   const [editingProspect, setEditingProspect] = React.useState<Prospect | null>(
@@ -55,6 +64,7 @@ export default function RosterPage() {
   const [editName, setEditName] = React.useState("");
   const [editTier, setEditTier] = React.useState<Tier>("B");
   const [editNote, setEditNote] = React.useState("");
+  const [editPhone, setEditPhone] = React.useState("");
   const [selectedProspect, setSelectedProspect] = React.useState<Prospect | null>(
     null
   );
@@ -63,6 +73,7 @@ export default function RosterPage() {
     null
   );
   const [isGenerating, setIsGenerating] = React.useState(false);
+  const [prospectMessages, setProspectMessages] = React.useState<MessageItem[]>([]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -89,7 +100,7 @@ export default function RosterPage() {
       setError(null);
       const { data, error: fetchError } = await client
         .from("prospects")
-        .select("id,name,tier,vibe_notes");
+        .select("id,name,tier,vibe_notes,phone_number");
 
       if (fetchError) {
         setError("Failed to load prospects.");
@@ -112,6 +123,7 @@ export default function RosterPage() {
           name: row.name ?? "Unknown",
           note: row.vibe_notes ?? undefined,
           tier: rowTier,
+          phoneNumber: row.phone_number ?? undefined,
         });
       });
 
@@ -121,6 +133,32 @@ export default function RosterPage() {
 
     fetchProspects();
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedProspect) {
+      setProspectMessages([]);
+      return;
+    }
+    const client = supabaseRef.current;
+    if (!client) return;
+
+    const loadMessages = async () => {
+      const { data } = await client
+        .from("messages")
+        .select("id,direction,body,created_at")
+        .eq("prospect_id", selectedProspect!.id)
+        .order("created_at", { ascending: true });
+      setProspectMessages(
+        (data ?? []).map((r) => ({
+          id: r.id as string,
+          direction: r.direction as "inbound" | "outbound",
+          body: (r.body as string) || "",
+          created_at: r.created_at as string,
+        }))
+      );
+    };
+    loadMessages();
+  }, [selectedProspect?.id]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const client = supabaseRef.current;
@@ -179,8 +217,9 @@ export default function RosterPage() {
       .insert({
         name: trimmedName,
         tier: newTier,
+        phone_number: newPhone.trim() || null,
       })
-      .select("id,name,tier,vibe_notes")
+      .select("id,name,tier,vibe_notes,phone_number")
       .single();
 
     if (insertError || !data) {
@@ -197,6 +236,7 @@ export default function RosterPage() {
           name: data.name ?? trimmedName,
           note: data.vibe_notes ?? undefined,
           tier: newTier,
+          phoneNumber: data.phone_number ?? undefined,
         },
         ...prev[newTier],
       ],
@@ -205,6 +245,7 @@ export default function RosterPage() {
     setIsSaving(false);
     setIsModalOpen(false);
     setNewName("");
+    setNewPhone("");
     setNewTier("B");
   };
 
@@ -254,6 +295,7 @@ export default function RosterPage() {
     setEditName(prospect.name);
     setEditTier(prospect.tier);
     setEditNote(prospect.note ?? "");
+    setEditPhone(prospect.phoneNumber ?? "");
     setIsEditOpen(true);
   };
 
@@ -271,7 +313,12 @@ export default function RosterPage() {
 
     const { error: updateError } = await client
       .from("prospects")
-      .update({ name: trimmedName, tier: editTier, vibe_notes: editNote.trim() })
+      .update({
+        name: trimmedName,
+        tier: editTier,
+        vibe_notes: editNote.trim(),
+        phone_number: editPhone.trim() || null,
+      })
       .eq("id", editingProspect.id);
 
     if (updateError) {
@@ -292,6 +339,7 @@ export default function RosterPage() {
           name: trimmedName,
           tier: editTier,
           note: editNote.trim() || undefined,
+          phoneNumber: editPhone.trim() || undefined,
         },
         ...next[editTier],
       ];
@@ -305,6 +353,7 @@ export default function RosterPage() {
         name: trimmedName,
         tier: editTier,
         note: editNote.trim() || undefined,
+        phoneNumber: editPhone.trim() || undefined,
       });
     }
 
@@ -344,11 +393,8 @@ export default function RosterPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            Roster
-          </p>
           <h1 className="text-3xl font-semibold tracking-wide">
-            Tier Control Grid
+            Roster Ranking
           </h1>
           <p className="text-sm text-[var(--rm-text-muted)]">
             Drag prospects across tiers to match priority.
@@ -425,6 +471,17 @@ export default function RosterPage() {
                   value={newName}
                   onChange={(event) => setNewName(event.target.value)}
                   placeholder="Enter name"
+                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm">
+                Phone
+                <input
+                  type="tel"
+                  value={newPhone}
+                  onChange={(event) => setNewPhone(event.target.value)}
+                  placeholder="+1 555 123 4567"
                   className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
                 />
               </label>
@@ -509,6 +566,17 @@ export default function RosterPage() {
               </label>
 
               <label className="flex flex-col gap-2 text-sm">
+                Phone
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(event) => setEditPhone(event.target.value)}
+                  placeholder="+1 555 123 4567"
+                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+                />
+              </label>
+
+              <label className="flex flex-col gap-2 text-sm">
                 Vibe Notes
                 <textarea
                   value={editNote}
@@ -565,16 +633,27 @@ export default function RosterPage() {
                   {tierLabels[selectedProspect.tier]}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedProspect(null)}
-                className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedProspect.phoneNumber ? (
+                  <a
+                    href={`sms:${selectedProspect.phoneNumber}`}
+                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text)]"
+                  >
+                    <MessageSquare size={14} strokeWidth={1.25} />
+                    Text
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setSelectedProspect(null)}
+                  className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
-            <div className="mt-6 space-y-4 text-sm">
+            <div className="mt-6 flex flex-1 flex-col gap-4 overflow-y-auto text-sm">
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
                   Vibe Notes
@@ -584,8 +663,36 @@ export default function RosterPage() {
                 </p>
               </div>
 
+              {prospectMessages.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
+                    Message History
+                  </p>
+                  <div className="max-h-48 space-y-2 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3">
+                    {prospectMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`text-xs ${
+                          msg.direction === "inbound"
+                            ? "text-[var(--rm-text-muted)]"
+                            : "text-[var(--rm-text)]"
+                        }`}
+                      >
+                        <span className="text-[10px] uppercase tracking-[0.2em]">
+                          {msg.direction}
+                        </span>
+                        <span className="ml-2">
+                          {new Date(msg.created_at).toLocaleString()}
+                        </span>
+                        <p className="mt-1">{msg.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <label className="flex flex-col gap-2 text-sm">
-                Incoming Text
+                Incoming Text (simulate)
                 <textarea
                   value={incomingText}
                   onChange={(event) => setIncomingText(event.target.value)}

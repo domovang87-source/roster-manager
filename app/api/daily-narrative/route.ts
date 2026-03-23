@@ -21,7 +21,7 @@ export async function GET() {
   const openai = getOpenAIClient();
 
   const allClear =
-    "No inbound from A-Tier. No pending messages for B/C-Tier.";
+    "No inbound from A Tier. No pending messages for B/C Tier.";
 
   if (!openai) {
     return NextResponse.json({ synopsis: allClear });
@@ -70,8 +70,8 @@ export async function GET() {
 
   const activityContext =
     inboundNames.length > 0
-      ? `A-Tier who texted: ${inboundNames.join(", ")}.`
-      : "No A-Tier inbound.";
+      ? `A Tier who texted: ${inboundNames.join(", ")}.`
+      : "No A Tier inbound.";
   const draftContext =
     draftCount > 0 ? `${draftCount} draft(s) waiting for approval.` : "No drafts.";
 
@@ -82,7 +82,7 @@ export async function GET() {
         {
           role: "system",
           content:
-            "Write a 1-2 sentence roster summary. Use the absolute minimum words. Never use: stagnation, optimize, engagement, leverage, or jargon. Format like a text: 'Zach (A-Tier) texted. 4 drafts waiting for approval.' Be blunt. No fluff.",
+            "Write a 1-2 sentence roster summary. Use the absolute minimum words. Never use: stagnation, optimize, engagement, leverage, or jargon. Format like a text: 'Zach (A Tier) texted. 4 drafts waiting for approval.' Be blunt. No fluff.",
         },
         {
           role: "user",

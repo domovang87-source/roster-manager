@@ -161,7 +161,7 @@ export default function LogicLabPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-          Logic Lab
+          Tier Rules
         </p>
         <h1 className="text-3xl font-semibold tracking-wide">
           Response Rule Engine

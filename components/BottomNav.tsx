@@ -7,7 +7,7 @@ import { Brain, Home, Kanban } from "lucide-react";
 const navItems = [
   { href: "/home", label: "Home", Icon: Home },
   { href: "/roster", label: "Roster", Icon: Kanban },
-  { href: "/logic-lab", label: "Logic Lab", Icon: Brain },
+  { href: "/logic-lab", label: "Tier Rules", Icon: Brain },
 ];
 
 export default function BottomNav() {
