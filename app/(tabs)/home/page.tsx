@@ -454,13 +454,16 @@ export default function HomePage() {
                 </p>
               )}
               <div className="mt-3 flex items-center gap-2">
-                <a
-                  href="sms:+15555551234"
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = `sms:+15555551234?body=${encodeURIComponent(exampleDraftText)}`;
+                  }}
                   className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
                 >
                   <MessageSquare size={14} strokeWidth={1.25} />
                   Text
-                </a>
+                </button>
                 {editingDraftId === "example" ? (
                   <button
                     type="button"
@@ -514,15 +517,20 @@ export default function HomePage() {
                   </p>
                 )}
                 <div className="mt-3 flex items-center gap-2">
-                  {draft.phoneNumber ? (
-                    <a
-                      href={`sms:${draft.phoneNumber}`}
-                      className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
-                    >
-                      <MessageSquare size={14} strokeWidth={1.25} />
-                      Text
-                    </a>
-                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const body = encodeURIComponent(draftEdits[draft.id] ?? draft.draftText);
+                      const url = draft.phoneNumber
+                        ? `sms:${draft.phoneNumber}?body=${body}`
+                        : `sms:?body=${body}`;
+                      window.location.href = url;
+                    }}
+                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
+                  >
+                    <MessageSquare size={14} strokeWidth={1.25} />
+                    Text
+                  </button>
                   {editingDraftId === draft.id ? (
                     <>
                       <button
