@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Roster Manager",
-  description: "Roster Manager CRM",
+  title: "STACK",
+  description: "STACK — your roster, prioritized.",
 };
 
 export default function RootLayout({

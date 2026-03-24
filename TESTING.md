@@ -1,4 +1,4 @@
-# Testing the Roster Manager
+# Testing STACK
 
 ## 1. Run the app locally
 

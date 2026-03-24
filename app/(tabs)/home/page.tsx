@@ -68,6 +68,7 @@ export default function HomePage() {
   const [exampleDraftText, setExampleDraftText] = React.useState(
     "You're the cutest."
   );
+  const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -89,13 +90,19 @@ export default function HomePage() {
 
     const loadNarrative = async () => {
       try {
-        const res = await fetch("/api/daily-narrative", { cache: "no-store" });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const res = await fetch("/api/daily-narrative", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
         const data = (await res.json()) as { synopsis?: string };
         setSynopsis(
           data.synopsis ??
             "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
         );
-      } catch {
+      } catch (_err) {
         setSynopsis(
           "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
         );
@@ -288,12 +295,41 @@ export default function HomePage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    setIsCheckoutLoading(true);
+    setError(null);
+    try {
+      const base =
+        typeof window !== "undefined"
+          ? window.location.origin
+          : "http://localhost:3000";
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          success_url: `${base}/home?success=1`,
+          cancel_url: `${base}/home`,
+        }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || data.error) {
+        setError(data.error ?? "Failed to start checkout.");
+        return;
+      }
+      if (data.url) window.location.href = data.url;
+    } catch {
+      setError("Failed to start checkout.");
+    } finally {
+      setIsCheckoutLoading(false);
+    }
+  };
+
   return (
-    <div className="rm-reveal space-y-12">
+    <div className="space-y-12">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-wide">
-            Roster Summary
+          <h1 className="text-3xl font-semibold tracking-[0.35em]">
+            STACK
           </h1>
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.5em] text-[var(--rm-text-muted)]">
@@ -304,12 +340,22 @@ export default function HomePage() {
             </p>
           </div>
         </div>
-        <Link
-          href="/roster"
-          className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
-        >
-          {rosterCount} Prospects
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/roster"
+            className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
+          >
+            {rosterCount} Prospects
+          </Link>
+          <button
+            type="button"
+            onClick={handleSubscribe}
+            disabled={isCheckoutLoading}
+            className="border border-[var(--rm-text)] bg-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-bg)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCheckoutLoading ? "Loading…" : "Subscribe"}
+          </button>
+        </div>
       </header>
 
       {error ? (
