@@ -60,6 +60,10 @@ export default function HomePage() {
   const [draftDeck, setDraftDeck] = React.useState<DraftItem[]>([]);
   const [recentConvos, setRecentConvos] = React.useState<RecentConvoItem[]>([]);
   const [rosterCount, setRosterCount] = React.useState<number>(0);
+  const [exampleATierProspect, setExampleATierProspect] = React.useState<{
+    name: string;
+    phoneNumber?: string;
+  } | null>(null);
   const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
@@ -201,6 +205,23 @@ export default function HomePage() {
       setRosterCount(count ?? 0);
     };
 
+    const loadExampleATierProspect = async () => {
+      const { data } = await client
+        .from("prospects")
+        .select("name,phone_number")
+        .eq("tier", "A")
+        .limit(1)
+        .maybeSingle();
+      if (data?.name) {
+        setExampleATierProspect({
+          name: data.name as string,
+          phoneNumber: data.phone_number ?? undefined,
+        });
+      } else {
+        setExampleATierProspect(null);
+      }
+    };
+
     const loadRecentConvos = async () => {
       const { data } = await client
         .from("messages")
@@ -239,6 +260,7 @@ export default function HomePage() {
     loadDraftDeck();
     loadRecentConvos();
     loadRosterCount();
+    loadExampleATierProspect();
   }, []);
 
   const handleSaveDraft = async (draftId: string) => {
@@ -372,19 +394,29 @@ export default function HomePage() {
         </div>
         <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
           {unreadAList.length === 0 ? (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold">Ava</p>
-                <p className="text-xs text-[var(--rm-text-muted)]">12m ago</p>
+            exampleATierProspect ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">{exampleATierProspect.name}</p>
+                  <p className="text-xs text-[var(--rm-text-muted)]">No new messages</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = exampleATierProspect.phoneNumber
+                      ? `sms:${exampleATierProspect.phoneNumber}`
+                      : "sms:";
+                    window.location.href = url;
+                  }}
+                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
+                >
+                  <MessageSquare size={14} strokeWidth={1.25} />
+                  Text
+                </button>
               </div>
-              <a
-                href="sms:+15555551234"
-                className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)]"
-              >
-                <MessageSquare size={14} strokeWidth={1.25} />
-                Text
-              </a>
-            </div>
+            ) : (
+              <p className="text-xs text-[var(--rm-text-muted)]">No A-tier prospects yet.</p>
+            )
           ) : (
             unreadAList.map((item) => (
               <div key={item.id} className="flex items-center justify-between">
