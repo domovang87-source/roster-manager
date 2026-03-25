@@ -139,13 +139,13 @@ export default function LogicLabPage() {
       .upsert(
         {
           tier,
-          auto_respond: tier === "A" ? false : rule.auto_respond,
-          delay_min_hours: tier === "A" ? null : rule.delay_min_hours,
-          delay_max_hours: tier === "A" ? null : rule.delay_max_hours,
-          max_words: tier === "A" ? null : rule.max_words,
+          auto_respond: false,
+          delay_min_hours: null,
+          delay_max_hours: null,
+          max_words: rule.max_words,
           notification_freq_minutes:
             tier === "A" ? rule.notification_freq_minutes : null,
-          voice_profile: tier === "A" ? rule.voice_profile : null,
+          voice_profile: rule.voice_profile || null,
         },
         { onConflict: "tier" }
       );
@@ -225,7 +225,7 @@ export default function LogicLabPage() {
                 </label>
               </div>
             ) : (
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="mt-4 space-y-4">
                 <label className="flex flex-col gap-2 text-sm">
                   Max words per draft
                   <input
@@ -237,6 +237,18 @@ export default function LogicLabPage() {
                       })
                     }
                     className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 text-sm">
+                  How do you want your AI to sound when drafting {tierLabels[tier]} replies?
+                  <textarea
+                    value={rules[tier].voice_profile}
+                    onChange={(event) =>
+                      updateRule(tier, { voice_profile: event.target.value })
+                    }
+                    rows={4}
+                    className="border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3 text-sm text-[var(--rm-text)]"
                   />
                 </label>
               </div>

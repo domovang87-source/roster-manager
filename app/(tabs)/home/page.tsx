@@ -2,24 +2,20 @@
 
 import React from "react";
 import Link from "next/link";
-import { Check, Clipboard, Edit2, MessageSquare, Save } from "lucide-react";
-import { formatScheduledFor } from "../../../lib/format-scheduled";
+import { Clipboard, Edit2, MessageSquare, Save } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 
-type UnreadItem = {
-  id: string;
-  name: string;
-  phoneNumber?: string;
-  receivedAt: string;
-};
+type Tier = "A" | "B" | "C";
 
-type DraftItem = {
+type TierProspect = {
   id: string;
   name: string;
-  tier: "B" | "C";
-  draftText: string;
+  tier: Tier;
   phoneNumber?: string;
-  scheduledFor: string | null;
+  lastInboundBody?: string;
+  lastInboundAt?: string;
+  draftId?: string;
+  draftText?: string;
 };
 
 type RecentConvoItem = {
@@ -51,29 +47,18 @@ const DEMO_SYNOPSIS =
   "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours.";
 
 export default function HomePage() {
-  const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(
-    null
-  );
+  const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const [synopsis, setSynopsis] = React.useState("Awaiting AI summary...");
   const [loadingNarrative, setLoadingNarrative] = React.useState(true);
-  const [unreadAList, setUnreadAList] = React.useState<UnreadItem[]>([]);
-  const [draftDeck, setDraftDeck] = React.useState<DraftItem[]>([]);
+  const [tierProspects, setTierProspects] = React.useState<Record<Tier, TierProspect[]>>({ A: [], B: [], C: [] });
   const [recentConvos, setRecentConvos] = React.useState<RecentConvoItem[]>([]);
-  const [rosterCount, setRosterCount] = React.useState<number>(0);
-  const [exampleATierProspect, setExampleATierProspect] = React.useState<{
-    name: string;
-    phoneNumber?: string;
-  } | null>(null);
+  const [rosterCount, setRosterCount] = React.useState(0);
   const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
-  const [isApproving, setIsApproving] = React.useState(false);
-  const [fadeDrafts, setFadeDrafts] = React.useState(false);
-  const [exampleDraftText, setExampleDraftText] = React.useState(
-    "You're the cutest."
-  );
   const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = React.useState<string | null>(null);
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -91,12 +76,8 @@ export default function HomePage() {
       const missingParts = [
         !config.urlPresent ? "URL" : null,
         !config.keyPresent ? "Anon key" : null,
-      ]
-        .filter(Boolean)
-        .join(" & ");
-      setError(
-        `Supabase is not configured (${missingParts} missing). Add env vars to .env.local and restart the dev server.`
-      );
+      ].filter(Boolean).join(" & ");
+      setError(`Supabase is not configured (${missingParts} missing). Add env vars to .env.local and restart the dev server.`);
       return;
     }
 
@@ -104,130 +85,66 @@ export default function HomePage() {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
-        const res = await fetch("/api/daily-narrative", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
+        const res = await fetch("/api/daily-narrative", { cache: "no-store", signal: controller.signal });
         clearTimeout(timeout);
         const data = (await res.json()) as { synopsis?: string };
-        setSynopsis(
-          data.synopsis ??
-            "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
-        );
-      } catch (_err) {
-        setSynopsis(
-          "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours."
-        );
+        setSynopsis(data.synopsis ?? DEMO_SYNOPSIS);
+      } catch {
+        setSynopsis(DEMO_SYNOPSIS);
       } finally {
         setLoadingNarrative(false);
       }
     };
 
-    const loadUnreadAList = async () => {
-      const { data } = await client
-        .from("messages")
-        .select("id,created_at,prospects(name,phone_number,tier)")
-        .eq("direction", "inbound")
-        .eq("prospects.tier", "A")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      const mapped = (data ?? [])
-        .map((row) => {
-          const prospect = Array.isArray(row.prospects)
-            ? row.prospects[0]
-            : row.prospects;
-          if (!prospect?.name) return null;
-          return {
-            id: row.id as string,
-            name: prospect.name as string,
-            phoneNumber: prospect.phone_number ?? undefined,
-            receivedAt: row.created_at as string,
-          };
-        })
-        .filter(Boolean) as UnreadItem[];
-
-      const latestByProspect = new Map<string, UnreadItem>();
-      mapped.forEach((item) => {
-        if (!latestByProspect.has(item.name)) {
-          latestByProspect.set(item.name, item);
-        }
-      });
-
-      setUnreadAList(Array.from(latestByProspect.values()));
-    };
-
-    const loadDraftDeck = async () => {
-      const [repliesRes, rulesRes] = await Promise.all([
-        client
-          .from("scheduled_replies")
-          .select("id,draft_text,tier,scheduled_for,prospects(name,phone_number)")
-          .eq("status", "scheduled")
-          .in("tier", ["B", "C"])
-          .limit(50),
-        client
-          .from("tier_rules")
-          .select("tier,auto_respond")
-          .in("tier", ["B", "C"]),
+    const loadTierProspects = async () => {
+      const [prospectsRes, messagesRes, draftsRes] = await Promise.all([
+        client.from("prospects").select("id,name,tier,phone_number"),
+        client.from("messages").select("id,body,created_at,direction,prospect_id").eq("direction", "inbound").order("created_at", { ascending: false }).limit(200),
+        client.from("scheduled_replies").select("id,draft_text,prospect_id").eq("status", "scheduled").limit(100),
       ]);
 
-      const rules = (rulesRes.data ?? []).reduce(
-        (acc, r) => {
-          acc[r.tier as "B" | "C"] = Boolean(r.auto_respond);
-          return acc;
-        },
-        {} as Record<string, boolean>
-      );
-
-      const mapped = (repliesRes.data ?? [])
-        .filter((row) => rules[row.tier as "B" | "C"] === true)
-        .map((row) => {
-          const prospect = Array.isArray(row.prospects)
-            ? row.prospects[0]
-            : row.prospects;
-          if (!prospect?.name) return null;
-          return {
-            id: row.id as string,
-            name: prospect.name as string,
-            tier: row.tier as "B" | "C",
-            draftText: row.draft_text as string,
-            phoneNumber: prospect.phone_number ?? undefined,
-            scheduledFor: (row.scheduled_for as string | null) ?? null,
-          };
-        })
-        .filter(Boolean) as DraftItem[];
-
-      setDraftDeck(mapped);
-      setDraftEdits(
-        mapped.reduce((acc, item) => {
-          acc[item.id] = item.draftText;
-          return acc;
-        }, {} as Record<string, string>)
-      );
-    };
-
-    const loadRosterCount = async () => {
-      const { count } = await client
-        .from("prospects")
-        .select("*", { count: "exact", head: true });
-      setRosterCount(count ?? 0);
-    };
-
-    const loadExampleATierProspect = async () => {
-      const { data } = await client
-        .from("prospects")
-        .select("name,phone_number")
-        .eq("tier", "A")
-        .limit(1)
-        .maybeSingle();
-      if (data?.name) {
-        setExampleATierProspect({
-          name: data.name as string,
-          phoneNumber: data.phone_number ?? undefined,
-        });
-      } else {
-        setExampleATierProspect(null);
+      const latestInbound = new Map<string, { body: string; at: string }>();
+      for (const row of messagesRes.data ?? []) {
+        const pid = row.prospect_id as string;
+        if (!latestInbound.has(pid)) {
+          latestInbound.set(pid, { body: (row.body as string) || "", at: row.created_at as string });
+        }
       }
+
+      const draftByProspect = new Map<string, { id: string; text: string }>();
+      for (const row of draftsRes.data ?? []) {
+        const pid = row.prospect_id as string;
+        if (!draftByProspect.has(pid)) {
+          draftByProspect.set(pid, { id: row.id as string, text: row.draft_text as string });
+        }
+      }
+
+      const result: Record<Tier, TierProspect[]> = { A: [], B: [], C: [] };
+      const edits: Record<string, string> = {};
+
+      for (const row of prospectsRes.data ?? []) {
+        const tier = row.tier as Tier;
+        if (!result[tier]) continue;
+        const pid = String(row.id);
+        const inbound = latestInbound.get(pid);
+        const draft = draftByProspect.get(pid);
+        const p: TierProspect = {
+          id: pid,
+          name: row.name ?? "Unknown",
+          tier,
+          phoneNumber: row.phone_number ?? undefined,
+          lastInboundBody: inbound?.body,
+          lastInboundAt: inbound?.at,
+          draftId: draft?.id,
+          draftText: draft?.text,
+        };
+        result[tier].push(p);
+        if (draft) edits[draft.id] = draft.text;
+      }
+
+      setTierProspects(result);
+      setDraftEdits(edits);
+      setRosterCount((prospectsRes.data ?? []).length);
     };
 
     const loadRecentConvos = async () => {
@@ -241,9 +158,7 @@ export default function HomePage() {
       for (const row of data ?? []) {
         const prospectId = row.prospect_id as string;
         if (latestByProspect.has(prospectId)) continue;
-        const prospect = Array.isArray(row.prospects)
-          ? row.prospects[0]
-          : row.prospects;
+        const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
         if (!prospect?.name) continue;
         const body = (row.body as string) || "";
         latestByProspect.set(prospectId, {
@@ -256,72 +171,75 @@ export default function HomePage() {
       }
       setRecentConvos(
         Array.from(latestByProspect.values()).sort(
-          (a, b) =>
-            new Date(b.lastMessageAt).getTime() -
-            new Date(a.lastMessageAt).getTime()
+          (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
         )
       );
     };
 
     loadNarrative();
-    loadUnreadAList();
-    loadDraftDeck();
+    loadTierProspects();
     loadRecentConvos();
-    loadRosterCount();
-    loadExampleATierProspect();
   }, []);
 
   const handleSaveDraft = async (draftId: string) => {
     const client = supabaseRef.current;
     if (!client) return;
-    const draftText = draftEdits[draftId]?.trim();
-    if (!draftText) return;
+    const text = draftEdits[draftId]?.trim();
+    if (!text) return;
 
     const { error: updateError } = await client
       .from("scheduled_replies")
-      .update({ draft_text: draftText })
+      .update({ draft_text: text })
       .eq("id", draftId);
 
     if (updateError) {
       setError("Failed to update draft.");
       return;
     }
-
-    setDraftDeck((prev) =>
-      prev.map((item) =>
-        item.id === draftId ? { ...item, draftText } : item
-      )
-    );
     setEditingDraftId(null);
   };
 
-  const handleApproveAll = async () => {
-    if (draftDeck.length === 0) return;
-    setIsApproving(true);
+  const handleGenerateDraft = async (prospect: TierProspect) => {
+    setIsGenerating(prospect.id);
     setError(null);
-
     try {
-      const res = await fetch("/api/approve-all", { method: "POST" });
-      const payload = (await res.json()) as { error?: string };
-      if (!res.ok || payload.error) {
-        setError(payload.error ?? "Failed to approve drafts.");
-        setIsApproving(false);
-        return;
+      const res = await fetch("/api/generate-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tier: prospect.tier,
+          name: prospect.name,
+          vibeNotes: "",
+          incomingText: prospect.lastInboundBody || "Hey",
+        }),
+      });
+      const data = await res.json();
+      const draftText = data.suggestedReply ?? data.autoReply ?? "";
+      if (!draftText) return;
+
+      const client = supabaseRef.current;
+      if (!client) return;
+
+      const { data: inserted } = await client
+        .from("scheduled_replies")
+        .insert({ prospect_id: prospect.id, tier: prospect.tier, draft_text: draftText, status: "scheduled" })
+        .select("id,draft_text")
+        .single();
+
+      if (inserted) {
+        setTierProspects((prev) => {
+          const next = { ...prev };
+          next[prospect.tier] = next[prospect.tier].map((p) =>
+            p.id === prospect.id ? { ...p, draftId: inserted.id as string, draftText: inserted.draft_text as string } : p
+          );
+          return next;
+        });
+        setDraftEdits((prev) => ({ ...prev, [inserted.id as string]: inserted.draft_text as string }));
       }
-
-      setFadeDrafts(true);
-      setSynopsis(
-        "Automations dispatched. B/C Tier replies sent with zero friction."
-      );
-
-      setTimeout(() => {
-        setDraftDeck([]);
-        setFadeDrafts(false);
-        setIsApproving(false);
-      }, 500);
     } catch {
-      setError("Failed to approve drafts.");
-      setIsApproving(false);
+      setError("Failed to generate draft.");
+    } finally {
+      setIsGenerating(null);
     }
   };
 
@@ -329,42 +247,28 @@ export default function HomePage() {
     setIsCheckoutLoading(true);
     setError(null);
     try {
-      const base =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : "http://localhost:3000";
+      const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          success_url: `${base}/home?success=1`,
-          cancel_url: `${base}/home`,
-        }),
+        body: JSON.stringify({ success_url: `${base}/home?success=1`, cancel_url: `${base}/home` }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || data.error) {
-        setError(data.error ?? "Failed to start checkout.");
-        return;
-      }
+      if (!res.ok || data.error) { setError(data.error ?? "Failed to start checkout."); return; }
       if (data.url) window.location.href = data.url;
-    } catch {
-      setError("Failed to start checkout.");
-    } finally {
-      setIsCheckoutLoading(false);
-    }
+    } catch { setError("Failed to start checkout."); } finally { setIsCheckoutLoading(false); }
   };
+
+  const tierOrder: Tier[] = ["A", "B", "C"];
+  const tierLabels: Record<Tier, string> = { A: "A Tier", B: "B Tier", C: "C Tier" };
 
   return (
     <div className="space-y-12">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-[0.35em]">
-            STACK
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-[0.35em]">STACK</h1>
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.5em] text-[var(--rm-text-muted)]">
-              AI Summary
-            </p>
+            <p className="text-xs uppercase tracking-[0.5em] text-[var(--rm-text-muted)]">AI Summary</p>
             <p className="text-sm text-[var(--rm-text-muted)]">
               {loadingNarrative ? "Generating summary..." : (recentConvos.length === 0 ? DEMO_SYNOPSIS : synopsis)}
             </p>
@@ -394,233 +298,128 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
+      {tierOrder.map((tier) => (
+        <section key={tier} className="space-y-3">
           <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            A Tier Incoming
+            {tierLabels[tier]}
           </p>
-        </div>
-        <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
-          {unreadAList.length === 0 ? (
-            exampleATierProspect ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold">{exampleATierProspect.name}</p>
-                  <p className="text-xs text-[var(--rm-text-muted)]">No new messages</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const url = exampleATierProspect.phoneNumber
-                      ? `sms:${exampleATierProspect.phoneNumber}`
-                      : "sms:";
-                    window.location.href = url;
-                  }}
-                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
-                >
-                  <MessageSquare size={14} strokeWidth={1.25} />
-                  Text
-                </button>
-              </div>
+          <div className="space-y-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
+            {tierProspects[tier].length === 0 ? (
+              <p className="text-xs text-[var(--rm-text-muted)]">
+                No {tierLabels[tier]} prospects yet.
+              </p>
             ) : (
-              <p className="text-xs text-[var(--rm-text-muted)]">No A-tier prospects yet.</p>
-            )
-          ) : (
-            unreadAList.map((item) => (
-              <div key={item.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold">{item.name}</p>
-                  <p className="text-xs text-[var(--rm-text-muted)]">
-                    {new Date(item.receivedAt).toLocaleString()}
-                  </p>
-                </div>
-                <a
-                  href={item.phoneNumber ? `sms:${item.phoneNumber}` : undefined}
-                  className={`flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] ${
-                    item.phoneNumber
-                      ? "text-[var(--rm-text)]"
-                      : "cursor-not-allowed text-[var(--rm-text-muted)]"
-                  }`}
-                >
-                  <MessageSquare size={14} strokeWidth={1.25} />
-                  Text
-                </a>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+              tierProspects[tier].map((prospect) => {
+                const draftId = prospect.draftId;
+                const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
+                const isEditing = editingDraftId === draftId;
+                const generating = isGenerating === prospect.id;
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            B/C Tier Outbound Drafts
-          </p>
-          {draftDeck.length > 0 ? (
-            <button
-              type="button"
-              onClick={handleApproveAll}
-              disabled={isApproving}
-              className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Check size={14} strokeWidth={1.25} />
-              {isApproving ? "Approving..." : "Approve All"}
-            </button>
-          ) : null}
-        </div>
-        <div className="space-y-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
-          {draftDeck.length === 0 ? (
-            <div
-              className={`border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3 ${
-                fadeDrafts ? "rm-fade-out" : ""
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Cora</p>
-                <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  C-Tier · {formatScheduledFor(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString())}
-                </span>
-              </div>
-              {editingDraftId === "example" ? (
-                <textarea
-                  value={exampleDraftText}
-                  onChange={(e) => setExampleDraftText(e.target.value)}
-                  rows={4}
-                  className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
-                />
-              ) : (
-                <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
-                  {exampleDraftText}
-                </p>
-              )}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.location.href = `sms:+15555551234?body=${encodeURIComponent(exampleDraftText)}`;
-                  }}
-                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
-                >
-                  <MessageSquare size={14} strokeWidth={1.25} />
-                  Text
-                </button>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(exampleDraftText, "example-copy")}
-                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                >
-                  <Clipboard size={14} strokeWidth={1.25} />
-                  {copiedId === "example-copy" ? "Copied!" : "Copy"}
-                </button>
-                {editingDraftId === "example" ? (
-                  <button
-                    type="button"
-                    onClick={() => setEditingDraftId(null)}
-                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                return (
+                  <div
+                    key={prospect.id}
+                    className="border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3"
                   >
-                    <Save size={14} strokeWidth={1.25} />
-                    Done
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingDraftId("example")}
-                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                  >
-                    <Edit2 size={14} strokeWidth={1.25} />
-                    Edit
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            draftDeck.map((draft) => (
-              <div
-                key={draft.id}
-                className={`border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3 ${
-                  fadeDrafts ? "rm-fade-out" : ""
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">{draft.name}</p>
-                  <span className="text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    {draft.tier}-Tier · {formatScheduledFor(draft.scheduledFor)}
-                  </span>
-                </div>
-                {editingDraftId === draft.id ? (
-                  <textarea
-                    value={draftEdits[draft.id] ?? draft.draftText}
-                    onChange={(event) =>
-                      setDraftEdits((prev) => ({
-                        ...prev,
-                        [draft.id]: event.target.value,
-                      }))
-                    }
-                    rows={4}
-                    className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
-                  />
-                ) : (
-                  <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
-                    {draft.draftText}
-                  </p>
-                )}
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const body = encodeURIComponent(draftEdits[draft.id] ?? draft.draftText);
-                      const url = draft.phoneNumber
-                        ? `sms:${draft.phoneNumber}?body=${body}`
-                        : `sms:?body=${body}`;
-                      window.location.href = url;
-                    }}
-                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
-                  >
-                    <MessageSquare size={14} strokeWidth={1.25} />
-                    Text
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(draftEdits[draft.id] ?? draft.draftText, draft.id)}
-                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                  >
-                    <Clipboard size={14} strokeWidth={1.25} />
-                    {copiedId === draft.id ? "Copied!" : "Copy"}
-                  </button>
-                  {editingDraftId === draft.id ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveDraft(draft.id)}
-                        className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                      >
-                        <Save size={14} strokeWidth={1.25} />
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingDraftId(null)}
-                        className="border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setEditingDraftId(draft.id)}
-                      className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                    >
-                      <Edit2 size={14} strokeWidth={1.25} />
-                      Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">{prospect.name}</p>
+                      {prospect.lastInboundAt ? (
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                          {formatRelativeTime(prospect.lastInboundAt)}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {prospect.lastInboundBody ? (
+                      <p className="mt-1 text-xs text-[var(--rm-text-muted)]">
+                        "{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}"
+                      </p>
+                    ) : null}
+
+                    {draftId && currentDraft ? (
+                      <>
+                        {isEditing ? (
+                          <textarea
+                            value={currentDraft}
+                            onChange={(e) => setDraftEdits((prev) => ({ ...prev, [draftId]: e.target.value }))}
+                            rows={3}
+                            className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
+                          />
+                        ) : (
+                          <p className="mt-2 text-xs text-[var(--rm-text)]">
+                            Draft: {currentDraft}
+                          </p>
+                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const body = encodeURIComponent(currentDraft);
+                              const url = prospect.phoneNumber ? `sms:${prospect.phoneNumber}?body=${body}` : `sms:?body=${body}`;
+                              window.location.href = url;
+                            }}
+                            className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
+                          >
+                            <MessageSquare size={14} strokeWidth={1.25} />
+                            Text
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(currentDraft, draftId)}
+                            className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                          >
+                            <Clipboard size={14} strokeWidth={1.25} />
+                            {copiedId === draftId ? "Copied!" : "Copy"}
+                          </button>
+                          {isEditing ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSaveDraft(draftId)}
+                              className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                            >
+                              <Save size={14} strokeWidth={1.25} />
+                              Save
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingDraftId(draftId)}
+                              className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                            >
+                              <Edit2 size={14} strokeWidth={1.25} />
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateDraft(prospect)}
+                          disabled={generating}
+                          className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60"
+                        >
+                          {generating ? "Generating..." : "Generate Draft"}
+                        </button>
+                        {prospect.phoneNumber ? (
+                          <button
+                            type="button"
+                            onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
+                            className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
+                          >
+                            <MessageSquare size={14} strokeWidth={1.25} />
+                            Text
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+      ))}
 
       <section className="space-y-3">
         <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
