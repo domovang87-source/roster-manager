@@ -28,23 +28,23 @@ type RecentConvoItem = {
 
 const DEMO_RECENT_CONVOS: RecentConvoItem[] = [
   {
-    prospectId: "demo-ava",
-    name: "Ava",
-    lastMessageBody: "Hey! Are we still on for tonight?",
+    prospectId: "demo-theo",
+    name: "Theo",
+    lastMessageBody: "Yo we should link this weekend",
     lastMessageAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
     direction: "inbound",
   },
   {
-    prospectId: "demo-cora",
-    name: "Cora",
-    lastMessageBody: "I got you a coffee :)",
-    lastMessageAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    prospectId: "demo-marek",
+    name: "Marek",
+    lastMessageBody: "For sure, let me know when you're free",
+    lastMessageAt: new Date(Date.now() - 3 * 7 * 24 * 60 * 60 * 1000).toISOString(),
     direction: "outbound",
   },
 ];
 
 const DEMO_SYNOPSIS =
-  "Ava texted you that she's upset about something 12 mins ago. Might want to check on that. Autosending text to Cora in 2 hours.";
+  "Theo texted 12 mins ago — wants to link this weekend. Haven't talked to Marek in 3 weeks, might be time to reach out.";
 
 export default function HomePage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);

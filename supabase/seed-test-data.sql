@@ -1,43 +1,33 @@
--- Test seed: Ava + Cora with messages (run after home-data.sql)
--- Use in Supabase SQL Editor to verify roster ↔ messages connection
--- Run: supabase/seed-test-data.sql
+-- Test seed: Theo + Marek with notes and messages (run after home-data.sql)
 
--- Ava (A-Tier)
+-- Theo (A-Tier) — high priority, active
 INSERT INTO prospects (name, tier, phone_number, vibe_notes)
-SELECT 'Ava', 'A', '+15555551234', 'Met at the gallery opening.'
-WHERE NOT EXISTS (SELECT 1 FROM prospects WHERE name = 'Ava');
+SELECT 'Theo', 'A', '+15555551234', 'Met at Jake''s party. Into photography and hiking. Always down to hang on weekends. Texts back fast.'
+WHERE NOT EXISTS (SELECT 1 FROM prospects WHERE name = 'Theo');
 
--- Cora (C-Tier)
+-- Marek (C-Tier) — keep alive, check in monthly
 INSERT INTO prospects (name, tier, phone_number, vibe_notes)
-SELECT 'Cora', 'C', '+15555559999', 'Coffee shop regular.'
-WHERE NOT EXISTS (SELECT 1 FROM prospects WHERE name = 'Cora');
+SELECT 'Marek', 'C', '+15555559999', 'Old college friend. Works in finance downtown. Watches F1. Haven''t seen him since March — need to keep this one alive.'
+WHERE NOT EXISTS (SELECT 1 FROM prospects WHERE name = 'Marek');
 
--- Messages for Ava
+-- Messages for Theo (recent)
 INSERT INTO messages (prospect_id, direction, body)
-SELECT id, 'inbound', 'Hey! Are we still on for tonight?'
-FROM prospects WHERE name = 'Ava' LIMIT 1;
-
-INSERT INTO messages (prospect_id, direction, body)
-SELECT id, 'outbound', 'Yeah, 8pm work?'
-FROM prospects WHERE name = 'Ava' LIMIT 1;
+SELECT id, 'inbound', 'Yo we should link this weekend'
+FROM prospects WHERE name = 'Theo' LIMIT 1;
 
 INSERT INTO messages (prospect_id, direction, body)
-SELECT id, 'inbound', 'Perfect, see you then 💕'
-FROM prospects WHERE name = 'Ava' LIMIT 1;
-
--- Messages for Cora
-INSERT INTO messages (prospect_id, direction, body)
-SELECT id, 'inbound', 'I got you a coffee :)'
-FROM prospects WHERE name = 'Cora' LIMIT 1;
+SELECT id, 'outbound', 'Bet, I''m free Saturday after 2'
+FROM prospects WHERE name = 'Theo' LIMIT 1;
 
 INSERT INTO messages (prospect_id, direction, body)
-SELECT id, 'outbound', 'You''re the cutest. Thanks!'
-FROM prospects WHERE name = 'Cora' LIMIT 1;
+SELECT id, 'inbound', 'Say less. I''ll hit you up'
+FROM prospects WHERE name = 'Theo' LIMIT 1;
 
--- Optional: scheduled reply for Cora
-INSERT INTO scheduled_replies (prospect_id, tier, draft_text, status, scheduled_for)
-SELECT id, 'C', 'You''re the cutest.', 'scheduled', now() + interval '2 hours'
-FROM prospects
-WHERE name = 'Cora'
-  AND NOT EXISTS (SELECT 1 FROM scheduled_replies sr WHERE sr.prospect_id = prospects.id AND sr.status = 'scheduled')
-LIMIT 1;
+-- Messages for Marek (stale — 3 weeks ago)
+INSERT INTO messages (prospect_id, direction, body, created_at)
+SELECT id, 'outbound', 'For sure, let me know when you''re free', now() - interval '21 days'
+FROM prospects WHERE name = 'Marek' LIMIT 1;
+
+INSERT INTO messages (prospect_id, direction, body, created_at)
+SELECT id, 'inbound', 'Will do bro', now() - interval '21 days'
+FROM prospects WHERE name = 'Marek' LIMIT 1;
