@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Check, Edit2, MessageSquare, Save } from "lucide-react";
+import { Check, Clipboard, Edit2, MessageSquare, Save } from "lucide-react";
 import { formatScheduledFor } from "../../../lib/format-scheduled";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 
@@ -73,6 +73,14 @@ export default function HomePage() {
     "You're the cutest."
   );
   const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  };
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -446,7 +454,7 @@ export default function HomePage() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-            B/C Tier Outbound Text Drafts
+            B/C Tier Outbound Drafts
           </p>
           {draftDeck.length > 0 ? (
             <button
@@ -495,6 +503,14 @@ export default function HomePage() {
                 >
                   <MessageSquare size={14} strokeWidth={1.25} />
                   Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(exampleDraftText, "example-copy")}
+                  className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                >
+                  <Clipboard size={14} strokeWidth={1.25} />
+                  {copiedId === "example-copy" ? "Copied!" : "Copy"}
                 </button>
                 {editingDraftId === "example" ? (
                   <button
@@ -562,6 +578,14 @@ export default function HomePage() {
                   >
                     <MessageSquare size={14} strokeWidth={1.25} />
                     Text
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(draftEdits[draft.id] ?? draft.draftText, draft.id)}
+                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                  >
+                    <Clipboard size={14} strokeWidth={1.25} />
+                    {copiedId === draft.id ? "Copied!" : "Copy"}
                   </button>
                   {editingDraftId === draft.id ? (
                     <>

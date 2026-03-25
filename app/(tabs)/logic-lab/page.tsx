@@ -164,10 +164,10 @@ export default function LogicLabPage() {
           Tier Rules
         </p>
         <h1 className="text-3xl font-semibold tracking-wide">
-          Response Rule Engine
+          Tier Rules
         </h1>
         <p className="text-sm text-[var(--rm-text-muted)]">
-          Define automated reply rules by tier.
+          Configure AI draft behavior by tier.
         </p>
       </header>
 
@@ -225,51 +225,9 @@ export default function LogicLabPage() {
                 </label>
               </div>
             ) : (
-              <div className="mt-4 grid gap-3 md:grid-cols-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={rules[tier].auto_respond}
-                    onChange={(event) =>
-                      updateRule(tier, { auto_respond: event.target.checked })
-                    }
-                    className="h-4 w-4 accent-[var(--rm-text)]"
-                  />
-                  Auto-respond
-                </label>
-
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <label className="flex flex-col gap-2 text-sm">
-                  Delay min (hours)
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={rules[tier].delay_min_hours}
-                    onChange={(event) =>
-                      updateRule(tier, {
-                        delay_min_hours: Number(event.target.value || 0),
-                      })
-                    }
-                    className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm">
-                  Delay max (hours)
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={rules[tier].delay_max_hours}
-                    onChange={(event) =>
-                      updateRule(tier, {
-                        delay_max_hours: Number(event.target.value || 0),
-                      })
-                    }
-                    className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-2 text-sm">
-                  Max words
+                  Max words per draft
                   <input
                     type="number"
                     value={rules[tier].max_words}
