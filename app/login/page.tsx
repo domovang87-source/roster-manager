@@ -8,7 +8,14 @@ import { Eye, EyeOff } from "lucide-react";
 type View = "sign_in" | "sign_up";
 
 export default function LoginPage() {
-  const supabase = useMemo(() => createBrowserSupabase(), []);
+  const supabase = useMemo(() => {
+    try {
+      return createBrowserSupabase();
+    } catch (e) {
+      console.error("Supabase init failed:", e);
+      return null;
+    }
+  }, []);
   const router = useRouter();
 
   const [view, setView] = useState<View>("sign_in");
@@ -27,6 +34,7 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (!supabase) return;
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
@@ -39,6 +47,10 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!supabase) {
+      setError("App is not configured. NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from the environment. Contact the developer.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
