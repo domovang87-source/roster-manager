@@ -9,7 +9,14 @@ const cookieOpts = {
 };
 
 export async function GET(req: Request) {
-  const supabase = await createServerSupabase();
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
+  try {
+    supabase = await createServerSupabase();
+  } catch (e) {
+    console.error("check-subscription Supabase init:", e);
+    return NextResponse.json({ pro: false, lookupFailed: true });
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

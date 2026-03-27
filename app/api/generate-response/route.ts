@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 
 type Tier = "A" | "B" | "C";
@@ -49,8 +49,15 @@ function timeAgo(dateStr: string): string {
   return d.toLocaleDateString();
 }
 
+type ActivityRow = {
+  body: string | null;
+  event_type: string | null;
+  direction: string | null;
+  created_at: string;
+};
+
 async function getActivityContext(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   prospectId: string,
   limit = 10
 ): Promise<string> {
@@ -61,15 +68,16 @@ async function getActivityContext(
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (!data || data.length === 0) return "";
+  const rows = (data ?? []) as ActivityRow[];
+  if (rows.length === 0) return "";
 
-  return data
+  return rows
     .reverse()
     .map((row) => {
-      const ago = timeAgo(row.created_at as string);
-      const label = EVENT_LABELS[row.event_type as string] ?? row.event_type ?? "Texted";
+      const ago = timeAgo(row.created_at);
+      const label = EVENT_LABELS[row.event_type ?? ""] ?? row.event_type ?? "Texted";
       const dir = row.direction === "inbound" ? " (them)" : row.direction === "outbound" ? " (you)" : "";
-      return `[${ago}] ${label}${dir}: ${row.body}`;
+      return `[${ago}] ${label}${dir}: ${row.body ?? ""}`;
     })
     .join("\n");
 }

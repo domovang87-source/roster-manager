@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle2, Edit2, ImagePlus, MessageSquare, Save, Share, UserPlus, X } from "lucide-react";
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
 import { useProStatus } from "../../../lib/use-pro-status";
@@ -484,35 +485,34 @@ export default function HomePage() {
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText, status: "pending" },
       ];
 
-      let insertResult:
-        | { data: { id: string; draft_text: string } | null; error: { message?: string } | null }
-        | null = null;
+      type ScheduledDraftRow = { id: string; draft_text: string };
+      let insertResult: PostgrestSingleResponse<ScheduledDraftRow> | undefined = undefined;
+
       for (const payload of insertPayloads) {
-        const attempt = await client
+        const attempt: PostgrestSingleResponse<ScheduledDraftRow> = await client
           .from("scheduled_replies")
           .insert(payload)
           .select("id,draft_text")
           .single();
-        insertResult = attempt as typeof insertResult;
+        insertResult = attempt;
         if (!attempt.error && attempt.data) break;
       }
 
-      if (!insertResult || insertResult.error || !insertResult.data) {
+      const row = insertResult?.data;
+      if (!row) {
         setError(insertResult?.error?.message ?? "Failed to save generated draft.");
         return;
       }
 
-      const inserted = insertResult.data;
-      if (inserted) {
-        setTierProspects((prev) => {
-          const next = { ...prev };
-          next[prospect.tier] = next[prospect.tier].map((p) =>
-            p.id === prospect.id ? { ...p, draftId: inserted.id as string, draftText: inserted.draft_text as string } : p
-          );
-          return next;
-        });
-        setDraftEdits((prev) => ({ ...prev, [inserted.id as string]: inserted.draft_text as string }));
-      }
+      const inserted = { id: String(row.id), draftText: String(row.draft_text ?? "") };
+      setTierProspects((prev) => {
+        const next = { ...prev };
+        next[prospect.tier] = next[prospect.tier].map((p) =>
+          p.id === prospect.id ? { ...p, draftId: inserted.id, draftText: inserted.draftText } : p
+        );
+        return next;
+      });
+      setDraftEdits((prev) => ({ ...prev, [inserted.id]: inserted.draftText }));
     } catch {
       setError("Failed to generate draft.");
     } finally {

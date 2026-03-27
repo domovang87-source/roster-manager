@@ -18,7 +18,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 500 });
   }
 
-  const supabase = await createServerSupabase();
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
+  try {
+    supabase = await createServerSupabase();
+  } catch (e) {
+    console.error("verify-checkout Supabase init:", e);
+    return NextResponse.json(
+      { error: "Supabase is not configured.", pro: false },
+      { status: 500 }
+    );
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
