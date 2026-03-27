@@ -19,7 +19,8 @@ type TierProspect = {
   phoneNumber?: string;
   vibeNotes?: string;
   lastInboundBody?: string;
-  lastInboundAt?: string;
+  /** Most recent log line (any type / direction), for the time badge */
+  lastActivityAt?: string;
   draftId?: string;
   draftText?: string;
 };
@@ -63,33 +64,34 @@ export default function HomePage() {
   const [dismissedOpen, setDismissedOpen] = React.useState(false);
   const { isPro, markPro } = useProStatus();
   const [justUpgraded, setJustUpgraded] = React.useState(false);
-  const verifiedRef = React.useRef(false);
-
   const searchParams = useSearchParams();
   const router = useRouter();
 
   React.useEffect(() => {
-    if (verifiedRef.current) return;
-
     const sessionId = searchParams.get("session_id");
     if (!sessionId) return;
 
-    verifiedRef.current = true;
     fetch("/api/verify-checkout", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId }),
     })
       .then((r) => r.json())
-      .then((data: { pro?: boolean }) => {
+      .then((data: { pro?: boolean; error?: string }) => {
         if (data.pro) {
           markPro();
           setJustUpgraded(true);
           setTimeout(() => setJustUpgraded(false), 5000);
+        } else if (data.error) {
+          setError(data.error);
         }
         router.replace("/home", { scroll: false });
       })
-      .catch(() => {});
+      .catch(() => {
+        setError("Could not confirm payment. If Stripe completed, check Supabase migrations and refresh.");
+        router.replace("/home", { scroll: false });
+      });
   }, [searchParams, router, markPro]);
 
   const shareDraftText = async (text: string, prospectName: string) => {
@@ -244,11 +246,10 @@ export default function HomePage() {
             .single(),
           client
             .from("messages")
-            .select("body,created_at")
+            .select("body,created_at,direction")
             .eq("prospect_id", draft.prospectId)
-            .eq("direction", "inbound")
             .order("created_at", { ascending: false })
-            .limit(1),
+            .limit(80),
           client
             .from("scheduled_replies")
             .select("id,draft_text")
@@ -264,7 +265,9 @@ export default function HomePage() {
       }
 
       const refreshedTier = (prospectRow.tier as Tier) ?? draft.tier;
-      const inbound = (inboundRows ?? [])[0];
+      const msgRows = inboundRows ?? [];
+      const latestAny = msgRows[0];
+      const inboundLatest = msgRows.find((r) => r.direction === "inbound");
       const scheduled = (scheduledRows ?? [])[0];
 
       setDismissedDrafts((prev) => prev.filter((d) => d.id !== draft.id));
@@ -287,8 +290,8 @@ export default function HomePage() {
             tier: refreshedTier,
             phoneNumber: prospectRow.phone_number ?? undefined,
             vibeNotes: (prospectRow.vibe_notes as string) ?? undefined,
-            lastInboundBody: (inbound?.body as string) ?? undefined,
-            lastInboundAt: (inbound?.created_at as string) ?? undefined,
+            lastInboundBody: (inboundLatest?.body as string) ?? undefined,
+            lastActivityAt: (latestAny?.created_at as string) ?? undefined,
             draftId: (scheduled?.id as string) ?? undefined,
             draftText: (scheduled?.draft_text as string) ?? undefined,
           },
@@ -336,7 +339,11 @@ export default function HomePage() {
     const loadTierProspects = async () => {
       const [prospectsRes, messagesRes, draftsRes, dismissedRes] = await Promise.all([
         client.from("prospects").select("id,name,tier,phone_number,vibe_notes"),
-        client.from("messages").select("id,body,created_at,direction,prospect_id").eq("direction", "inbound").order("created_at", { ascending: false }).limit(200),
+        client
+          .from("messages")
+          .select("id,body,created_at,direction,prospect_id")
+          .order("created_at", { ascending: false })
+          .limit(2000),
         client.from("scheduled_replies").select("id,draft_text,prospect_id").eq("status", "scheduled").limit(100),
         client
           .from("scheduled_replies")
@@ -346,10 +353,14 @@ export default function HomePage() {
           .limit(50),
       ]);
 
+      const latestActivityAt = new Map<string, string>();
       const latestInbound = new Map<string, { body: string; at: string }>();
       for (const row of messagesRes.data ?? []) {
         const pid = row.prospect_id as string;
-        if (!latestInbound.has(pid)) {
+        if (!latestActivityAt.has(pid)) {
+          latestActivityAt.set(pid, row.created_at as string);
+        }
+        if (row.direction === "inbound" && !latestInbound.has(pid)) {
           latestInbound.set(pid, { body: (row.body as string) || "", at: row.created_at as string });
         }
       }
@@ -378,7 +389,7 @@ export default function HomePage() {
           phoneNumber: row.phone_number ?? undefined,
           vibeNotes: (row.vibe_notes as string) ?? undefined,
           lastInboundBody: inbound?.body,
-          lastInboundAt: inbound?.at,
+          lastActivityAt: latestActivityAt.get(pid),
           draftId: draft?.id,
           draftText: draft?.text,
         };
@@ -516,6 +527,7 @@ export default function HomePage() {
       const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ success_url: `${base}/home?success=1`, cancel_url: `${base}/home` }),
       });
@@ -684,9 +696,9 @@ export default function HomePage() {
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-semibold">{prospect.name}</p>
                           <div className="flex items-center gap-2">
-                            {prospect.lastInboundAt ? (
+                            {prospect.lastActivityAt ? (
                               <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                                {formatRelativeTime(prospect.lastInboundAt)}
+                                {formatRelativeTime(prospect.lastActivityAt)}
                               </span>
                             ) : null}
                           </div>

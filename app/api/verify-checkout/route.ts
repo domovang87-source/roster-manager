@@ -1,34 +1,39 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
 
-const supabase =
-  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    ? createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      )
-    : null;
+const cookieOpts = {
+  path: "/",
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+};
 
 export async function POST(req: Request) {
-  if (!stripe || !supabase) {
+  if (!stripe) {
+    return NextResponse.json({ error: "Stripe is not configured." }, { status: 500 });
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     return NextResponse.json(
-      { error: "Not configured." },
-      { status: 500 }
+      { error: "Not authenticated. Sign in and return from checkout again.", pro: false },
+      { status: 401 }
     );
   }
 
   const { session_id } = (await req.json()) as { session_id?: string };
 
   if (!session_id) {
-    return NextResponse.json(
-      { error: "Missing session_id." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing session_id.", pro: false }, { status: 400 });
   }
 
   try {
@@ -38,34 +43,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ pro: false, reason: "not_complete" });
     }
 
-    const { error: upsertError } = await supabase
-      .from("subscriptions")
-      .upsert(
-        {
-          stripe_session_id: session_id,
-          stripe_customer_id: session.customer as string | null,
-          stripe_subscription_id: session.subscription as string | null,
-          status: "active",
-        },
-        { onConflict: "stripe_session_id" }
-      );
+    const { error: upsertError } = await supabase.from("subscriptions").upsert(
+      {
+        user_id: user.id,
+        stripe_session_id: session_id,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : null,
+        stripe_subscription_id:
+          typeof session.subscription === "string" ? session.subscription : null,
+        status: "active",
+      },
+      { onConflict: "user_id" }
+    );
 
     if (upsertError) {
       console.error("Subscription upsert error:", upsertError);
+      return NextResponse.json(
+        {
+          pro: false,
+          error:
+            upsertError.code === "PGRST205" || upsertError.message?.includes("subscriptions")
+              ? "Database not ready: run supabase/subscriptions-migration.sql and subscriptions-user-migration.sql."
+              : upsertError.message ?? "Could not save subscription.",
+        },
+        { status: 500 }
+      );
     }
 
     const response = NextResponse.json({ pro: true });
-    response.cookies.set("stack_pro", "1", {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-    });
+    response.cookies.set("stack_pro", "1", cookieOpts);
     return response;
   } catch (err) {
     console.error("Verify checkout error:", err);
     return NextResponse.json(
-      { error: "Failed to verify checkout." },
+      { error: "Failed to verify checkout.", pro: false },
       { status: 500 }
     );
   }

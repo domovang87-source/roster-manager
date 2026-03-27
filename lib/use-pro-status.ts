@@ -21,14 +21,27 @@ export function useProStatus() {
       setChecked(true);
     }
 
-    fetch("/api/check-subscription")
+    fetch("/api/check-subscription", { credentials: "same-origin" })
       .then((r) => r.json())
-      .then((data: { pro?: boolean }) => {
+      .then((data: { pro?: boolean; lookupFailed?: boolean }) => {
+        if (data.lookupFailed) {
+          // Table missing / PostgREST error — don't clear a working local Pro state.
+          setChecked(true);
+          return;
+        }
         const pro = data.pro === true;
         if (pro) {
           setIsPro(true);
           localStorage.setItem(LS_KEY, "1");
           document.cookie = "stack_pro=1; path=/; max-age=31536000; samesite=lax";
+        } else {
+          setIsPro(false);
+          try {
+            localStorage.removeItem(LS_KEY);
+          } catch {
+            /* ignore */
+          }
+          document.cookie = "stack_pro=; path=/; max-age=0; samesite=lax";
         }
         setChecked(true);
       })

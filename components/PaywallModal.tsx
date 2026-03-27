@@ -21,6 +21,7 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
     try {
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
