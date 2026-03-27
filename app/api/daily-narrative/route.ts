@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import OpenAI from "openai";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -10,88 +9,120 @@ const getSupabaseServerClient = () => {
   return createClient(supabaseUrl, supabaseAnonKey);
 };
 
-const getOpenAIClient = () => {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return null;
-  return new OpenAI({ apiKey: key });
-};
+type Tier = "A" | "B" | "C";
+
+const DEFAULT_REMIND_DAYS: Record<Tier, number> = { A: 7, B: 14, C: 30 };
 
 export async function GET() {
   const supabase = getSupabaseServerClient();
-  const openai = getOpenAIClient();
 
-  const allClear =
-    "No inbound from A Tier. No pending messages for B/C Tier.";
+  const allClear = "All quiet. No one needs attention right now.";
 
-  if (!openai) {
+  if (!supabase) {
     return NextResponse.json({ synopsis: allClear });
   }
-
-  let inboundNames: string[] = [];
-  let draftCount = 0;
-
-  if (supabase) {
-    try {
-      const [messagesRes, draftsRes] = await Promise.all([
-        supabase
-          .from("messages")
-          .select("direction,read_at,responded_at,prospects(name,tier)")
-          .eq("direction", "inbound")
-          .or("read_at.is.null,responded_at.is.null")
-          .order("created_at", { ascending: false })
-          .limit(20),
-        supabase
-          .from("scheduled_replies")
-          .select("prospects(name)")
-          .eq("status", "scheduled")
-          .limit(20),
-      ]);
-      const messages = messagesRes.data ?? [];
-      const drafts = draftsRes.data ?? [];
-      const seen = new Set<string>();
-      messages.forEach((m) => {
-        const p = m.prospects as { name?: string; tier?: string } | null;
-        if (p?.tier === "A" && p?.name) {
-          if (!seen.has(p.name)) {
-            seen.add(p.name);
-            inboundNames.push(p.name);
-          }
-        }
-      });
-      draftCount = drafts.length;
-    } catch {
-      /* fall through */
-    }
-  }
-
-  if (inboundNames.length === 0 && draftCount === 0) {
-    return NextResponse.json({ synopsis: allClear });
-  }
-
-  const activityContext =
-    inboundNames.length > 0
-      ? `A Tier who texted: ${inboundNames.join(", ")}.`
-      : "No A Tier inbound.";
-  const draftContext =
-    draftCount > 0 ? `${draftCount} draft(s) waiting for approval.` : "No drafts.";
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Write a 1-2 sentence roster summary. Use the absolute minimum words. Never use: stagnation, optimize, engagement, leverage, or jargon. Format like a text: 'Zach (A Tier) texted. 4 drafts waiting for approval.' Be blunt. No fluff.",
-        },
-        {
-          role: "user",
-          content: `${activityContext} ${draftContext}\n\nOne line.`,
-        },
-      ],
+    const [prospectsRes, messagesRes, dismissedRes, draftsRes, rulesRes] = await Promise.all([
+      supabase.from("prospects").select("id,name,tier"),
+      supabase
+        .from("messages")
+        .select("prospect_id,created_at")
+        .order("created_at", { ascending: false })
+        .limit(5000),
+      supabase
+        .from("scheduled_replies")
+        .select("prospect_id,dismissed_at")
+        .eq("status", "dismissed")
+        .not("dismissed_at", "is", null)
+        .order("dismissed_at", { ascending: false })
+        .limit(5000),
+      supabase
+        .from("scheduled_replies")
+        .select("prospect_id")
+        .eq("status", "scheduled")
+        .limit(100),
+      supabase.from("tier_rules").select("tier,remind_after_days"),
+    ]);
+
+    const prospects = prospectsRes.data ?? [];
+    const messages = messagesRes.data ?? [];
+    const dismissed = dismissedRes.data ?? [];
+    const drafts = draftsRes.data ?? [];
+    const rules = rulesRes.data ?? [];
+
+    if (prospects.length === 0) {
+      return NextResponse.json({ synopsis: allClear });
+    }
+
+    const remindDays: Record<string, number> = {};
+    rules.forEach((r) => {
+      if (r.tier && typeof r.remind_after_days === "number") {
+        remindDays[r.tier as string] = r.remind_after_days;
+      }
     });
-    const synopsis =
-      completion.choices[0]?.message?.content?.trim() ?? allClear;
+
+    const lastActivity = new Map<string, string>();
+    for (const msg of messages) {
+      const pid = msg.prospect_id as string;
+      if (!lastActivity.has(pid)) {
+        lastActivity.set(pid, msg.created_at as string);
+      }
+    }
+    for (const row of dismissed) {
+      const pid = row.prospect_id as string;
+      if (!lastActivity.has(pid)) {
+        lastActivity.set(pid, row.dismissed_at as string);
+      }
+    }
+
+    const now = Date.now();
+    const staleProspects: string[] = [];
+    const activeANames: string[] = [];
+
+    for (const p of prospects) {
+      const pid = String(p.id);
+      const tier = p.tier as Tier;
+      const name = p.name as string;
+      const threshold = remindDays[tier] ?? DEFAULT_REMIND_DAYS[tier] ?? 14;
+      const last = lastActivity.get(pid);
+
+      if (!last) {
+        staleProspects.push(`${name} (${tier}-Tier) — no activity logged yet`);
+        continue;
+      }
+
+      const daysSince = Math.floor((now - new Date(last).getTime()) / 86_400_000);
+      if (daysSince >= threshold) {
+        staleProspects.push(`${name} (${tier}-Tier) — ${daysSince}d since last interaction, threshold is ${threshold}d`);
+      }
+
+      if (tier === "A" && daysSince < 2) {
+        activeANames.push(name);
+      }
+    }
+
+    const draftCount = drafts.length;
+
+    const snippets: string[] = [];
+    if (staleProspects.length > 0) {
+      snippets.push(
+        `Overdue: ${staleProspects
+          .slice(0, 4)
+          .map((s) => s.replace(/\s+—\s+threshold.*$/i, ""))
+          .join("; ")}.`
+      );
+    } else {
+      snippets.push("Everyone is up to date.");
+    }
+    if (activeANames.length > 0) {
+      snippets.push(`Recent A-Tier activity: ${activeANames.join(", ")}.`);
+    }
+    if (draftCount > 0) {
+      snippets.push(`${draftCount} draft(s) waiting.`);
+    }
+
+    const synopsis = snippets.join(" ").trim() || allClear;
     return NextResponse.json({ synopsis });
   } catch (err) {
     console.error("OpenAI daily-narrative error:", err);

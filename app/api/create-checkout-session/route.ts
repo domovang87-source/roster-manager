@@ -17,21 +17,17 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = (await req.json()) as {
-      success_url?: string;
-      cancel_url?: string;
-    };
-
+    const origin = req.headers.get("origin") || req.headers.get("referer")?.replace(/\/[^/]*$/, "") || "http://127.0.0.1:3000";
     const base =
       process.env.NEXT_PUBLIC_APP_URL ??
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ??
-      "http://localhost:3000";
+      origin;
 
     const session = await stripe!.checkout.sessions.create({
       mode: checkoutMode,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: body.success_url ?? `${base}/home?success=1`,
-      cancel_url: body.cancel_url ?? `${base}/home?canceled=1`,
+      success_url: `${base}/home?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/home?canceled=1`,
     });
 
     return NextResponse.json({ url: session.url });

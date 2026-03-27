@@ -2,9 +2,15 @@
 
 import React from "react";
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/core";
-import { MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
+import PaywallModal from "../../../components/PaywallModal";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
+import { useProStatus } from "../../../lib/use-pro-status";
+
+const DEFAULT_REMIND_DAYS: Record<string, number> = { A: 7, B: 14, C: 30 };
+
+const FREE_ROSTER_LIMIT = 1;
 
 type Tier = "A" | "B" | "C";
 
@@ -74,6 +80,9 @@ export default function RosterPage() {
   );
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [prospectMessages, setProspectMessages] = React.useState<MessageItem[]>([]);
+  const [showPaywall, setShowPaywall] = React.useState(false);
+  const { isPro } = useProStatus();
+  const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -98,36 +107,76 @@ export default function RosterPage() {
     const fetchProspects = async () => {
       setIsLoading(true);
       setError(null);
-      const { data, error: fetchError } = await client
-        .from("prospects")
-        .select("id,name,tier,vibe_notes,phone_number");
 
-      if (fetchError) {
+      const [prospectsResult, messagesResult, dismissedResult, rulesResult] = await Promise.all([
+        client.from("prospects").select("id,name,tier,vibe_notes,phone_number"),
+        client.from("messages").select("prospect_id,created_at").order("created_at", { ascending: false }).limit(5000),
+        client
+          .from("scheduled_replies")
+          .select("prospect_id,dismissed_at")
+          .eq("status", "dismissed")
+          .not("dismissed_at", "is", null)
+          .order("dismissed_at", { ascending: false })
+          .limit(5000),
+        client.from("tier_rules").select("tier,remind_after_days"),
+      ]);
+
+      if (prospectsResult.error) {
         setError("Failed to load prospects.");
         setIsLoading(false);
         return;
       }
 
-      const nextMap: Record<Tier, Prospect[]> = {
-        A: [],
-        B: [],
-        C: [],
-      };
+      const remindDays: Record<string, number> = {};
+      (rulesResult.data ?? []).forEach((r) => {
+        if (r.tier && typeof r.remind_after_days === "number") {
+          remindDays[r.tier as string] = r.remind_after_days;
+        }
+      });
 
-      (data ?? []).forEach((row) => {
+      const lastActivity = new Map<string, string>();
+      for (const msg of messagesResult.data ?? []) {
+        const pid = msg.prospect_id as string;
+        if (!lastActivity.has(pid)) {
+          lastActivity.set(pid, msg.created_at as string);
+        }
+      }
+      for (const row of dismissedResult.data ?? []) {
+        const pid = row.prospect_id as string;
+        if (!lastActivity.has(pid)) {
+          lastActivity.set(pid, row.dismissed_at as string);
+        }
+      }
+
+      const nextMap: Record<Tier, Prospect[]> = { A: [], B: [], C: [] };
+      const staleMap: Record<string, number | null> = {};
+      const now = Date.now();
+
+      (prospectsResult.data ?? []).forEach((row) => {
         const rowTier = row.tier as Tier | undefined;
         if (!rowTier || !nextMap[rowTier]) return;
+        const pid = String(row.id);
 
         nextMap[rowTier].push({
-          id: String(row.id),
+          id: pid,
           name: row.name ?? "Unknown",
           note: row.vibe_notes ?? undefined,
           tier: rowTier,
           phoneNumber: row.phone_number ?? undefined,
         });
+
+        const threshold = remindDays[rowTier] ?? DEFAULT_REMIND_DAYS[rowTier] ?? 14;
+        const last = lastActivity.get(pid);
+        if (!last) {
+          staleMap[pid] = -1;
+        } else {
+          const daysSince = Math.floor((now - new Date(last).getTime()) / 86_400_000);
+          staleMap[pid] = daysSince >= threshold ? daysSince : null;
+        }
       });
 
       setTierMap(nextMap);
+      setStaleDays(staleMap);
       setIsLoading(false);
     };
 
@@ -200,6 +249,19 @@ export default function RosterPage() {
     }
   };
 
+  const totalProspects = tierOrder.reduce(
+    (sum, t) => sum + tierMap[t].length,
+    0
+  );
+
+  const handleNewProspectClick = () => {
+    if (!isPro && totalProspects >= FREE_ROSTER_LIMIT) {
+      setShowPaywall(true);
+    } else {
+      setIsModalOpen(true);
+    }
+  };
+
   const handleCreateProspect = async () => {
     const client = supabaseRef.current;
     if (!client) return;
@@ -223,7 +285,8 @@ export default function RosterPage() {
       .single();
 
     if (insertError || !data) {
-      setError("Failed to create prospect.");
+      console.error("Create prospect error:", insertError);
+      setError(insertError?.message ?? "Failed to create prospect.");
       setIsSaving(false);
       return;
     }
@@ -402,7 +465,7 @@ export default function RosterPage() {
         </div>
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleNewProspectClick}
           className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:border-[var(--rm-text)]"
         >
           New Prospect
@@ -435,6 +498,7 @@ export default function RosterPage() {
                   tier={tier}
                   prospect={prospect}
                   isSelected={selectedProspect?.id === prospect.id}
+                  staleDayCount={staleDays[prospect.id] ?? null}
                   onSelect={() => {
                     setSelectedProspect(prospect);
                     setResponseData(null);
@@ -742,6 +806,12 @@ export default function RosterPage() {
           </div>
         </div>
       ) : null}
+
+      <PaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        feature="Adding more than 1 roster member"
+      />
     </div>
   );
 }
@@ -783,12 +853,14 @@ function DraggableProspect({
   tier,
   prospect,
   isSelected,
+  staleDayCount,
   onSelect,
   onEdit,
 }: {
   tier: Tier;
   prospect: Prospect;
   isSelected: boolean;
+  staleDayCount: number | null;
   onSelect: () => void;
   onEdit: () => void;
 }) {
@@ -801,6 +873,13 @@ function DraggableProspect({
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
+
+  const staleLabel =
+    staleDayCount === -1
+      ? "No activity"
+      : staleDayCount !== null
+        ? `${staleDayCount}d quiet`
+        : null;
 
   return (
     <div
@@ -816,6 +895,14 @@ function DraggableProspect({
       <ProspectCard
         name={prospect.name}
         note={prospect.note}
+        badge={
+          staleLabel ? (
+            <span className="flex items-center gap-1 text-[10px] text-amber-400/80">
+              <Clock size={10} strokeWidth={1.5} />
+              {staleLabel}
+            </span>
+          ) : null
+        }
         actions={
           <>
             <button

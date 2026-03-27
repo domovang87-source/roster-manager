@@ -9,6 +9,7 @@ type RequestBody = {
   name: string;
   vibeNotes?: string;
   incomingText: string;
+  prospectId?: string;
 };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,19 +26,61 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey: key });
 };
 
-const truncateWords = (text: string, maxWords: number) => {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= maxWords) return text.trim();
-  return `${words.slice(0, maxWords).join(" ")}...`;
+const EVENT_LABELS: Record<string, string> = {
+  text: "Texted",
+  date: "Went on a date",
+  hangout: "Hung out",
+  call: "Called",
+  note: "Note",
 };
+
+function timeAgo(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const min = Math.floor(diffMs / 60_000);
+  const hrs = Math.floor(diffMs / 3_600_000);
+  const days = Math.floor(diffMs / 86_400_000);
+  const weeks = Math.floor(days / 7);
+  if (min < 60) return `${min} minutes ago`;
+  if (hrs < 24) return `${hrs} hours ago`;
+  if (days < 7) return `${days} days ago`;
+  if (weeks < 5) return `${weeks} weeks ago`;
+  return d.toLocaleDateString();
+}
+
+async function getActivityContext(
+  supabase: ReturnType<typeof createClient>,
+  prospectId: string,
+  limit = 10
+): Promise<string> {
+  const { data } = await supabase
+    .from("messages")
+    .select("body,event_type,direction,created_at")
+    .eq("prospect_id", prospectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!data || data.length === 0) return "";
+
+  return data
+    .reverse()
+    .map((row) => {
+      const ago = timeAgo(row.created_at as string);
+      const label = EVENT_LABELS[row.event_type as string] ?? row.event_type ?? "Texted";
+      const dir = row.direction === "inbound" ? " (them)" : row.direction === "outbound" ? " (you)" : "";
+      return `[${ago}] ${label}${dir}: ${row.body}`;
+    })
+    .join("\n");
+}
 
 export async function POST(req: Request) {
   const body = (await req.json()) as RequestBody;
-  const { tier, name, vibeNotes, incomingText } = body ?? {};
+  const { tier, name, vibeNotes, incomingText, prospectId } = body ?? {};
 
-  if (!tier || !incomingText) {
+  if (!tier) {
     return NextResponse.json(
-      { error: "Missing tier or incoming text." },
+      { error: "Missing tier." },
       { status: 400 }
     );
   }
@@ -58,61 +101,43 @@ export async function POST(req: Request) {
     );
   }
 
-  const { data, error } = await supabase
+  const activityLog = prospectId
+    ? await getActivityContext(supabase, prospectId)
+    : "";
+
+  const { data: ruleData, error: ruleError } = await supabase
     .from("tier_rules")
-    .select(
-      "auto_respond,delay_min_hours,delay_max_hours,max_words,voice_profile"
-    )
+    .select("voice_profile")
     .eq("tier", tier)
     .single();
 
-  if (error && error.code !== "PGRST116") {
+  if (ruleError && ruleError.code !== "PGRST116") {
     return NextResponse.json(
       { error: "Failed to load tier rules." },
       { status: 500 }
     );
   }
 
-  const maxWords = data?.max_words ?? 60;
-  const delayMin = data?.delay_min_hours ?? 0.5;
-  const delayMax = data?.delay_max_hours ?? 2;
+  const voiceProfile = ruleData?.voice_profile ?? "Confident, concise, classy.";
 
-  if (tier === "A") {
-    const voiceProfile = data?.voice_profile ?? "Confident, concise, classy.";
-    const systemPrompt =
-      "You are an assistant helping a user manage their high-priority dating roster. " +
-      `Based on the following Voice Profile: ${voiceProfile}, analyze the incoming text and suggest a high-status, effective reply.`;
-    const userPrompt = `Incoming message:\n"${incomingText}"\n\nProspect: ${name}${vibeNotes ? `\nContext/notes: ${vibeNotes}` : ""}\n\nRespond with exactly two lines:\n1. SUMMARY: (one sentence summarizing the message)\n2. REPLY: (your suggested reply, match the voice profile)`;
-
-    try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      });
-      const content = completion.choices[0]?.message?.content ?? "";
-      const summaryMatch = content.match(/SUMMARY:\s*(.+?)(?=\n|$)/i);
-      const replyMatch = content.match(/REPLY:\s*([\s\S]+?)(?=\n\n|$)/i);
-      const summary = summaryMatch?.[1]?.trim() ?? content.split("\n")[0] ?? incomingText.slice(0, 140);
-      const suggestedReply = truncateWords(
-        replyMatch?.[1]?.trim() ?? content.split("\n").slice(1).join(" ").replace(/^REPLY:\s*/i, "").trim() ?? `Got it, ${name}. I'll circle back.`,
-        maxWords
-      );
-      return NextResponse.json({ tier, summary, suggestedReply });
-    } catch (err) {
-      console.error("OpenAI error:", err);
-      return NextResponse.json(
-        { error: "Failed to generate response." },
-        { status: 500 }
-      );
-    }
-  }
+  const contextBlock = [
+    `Prospect: ${name}`,
+    vibeNotes ? `Notes: ${vibeNotes}` : null,
+    activityLog ? `\nRecent activity log:\n${activityLog}` : null,
+    incomingText ? `\nLatest message from them: "${incomingText}"` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const systemPrompt =
-    `Generate a brief, polite auto-reply for a B/C-Tier prospect. Keep it under ${maxWords} words. Mention a reply within ${delayMin}-${delayMax} hours. Do not be overly eager.`;
-  const userPrompt = `Prospect: ${name}\n\nWrite a single short auto-reply message.`;
+    "You are a texting assistant helping the user keep their dating roster warm. " +
+    `Voice style: ${voiceProfile}. ` +
+    "Draft a short, natural text message the user can send. " +
+    "Use the prospect's notes and activity history to personalize it. " +
+    "If there's been no contact in a while, craft a casual re-engagement text. " +
+    "Keep it concise and natural — match the energy of the conversation. No quotation marks around the message.";
+
+  const userPrompt = `${contextBlock}\n\nDraft a text to send to ${name}.`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -122,16 +147,14 @@ export async function POST(req: Request) {
         { role: "user", content: userPrompt },
       ],
     });
-    const raw = completion.choices[0]?.message?.content?.trim() ?? "";
-    const autoReply = truncateWords(
-      raw || `Thanks for the message, ${name}. I'll reply within ${delayMin}-${delayMax} hours.`,
-      maxWords
-    );
-    return NextResponse.json({ tier, autoReply });
+
+    const draft = completion.choices[0]?.message?.content?.trim() || `Hey ${name}, been a minute. What's good?`;
+
+    return NextResponse.json({ tier, draft, suggestedReply: draft, autoReply: draft });
   } catch (err) {
     console.error("OpenAI error:", err);
     return NextResponse.json(
-      { error: "Failed to generate auto-reply." },
+      { error: "Failed to generate draft." },
       { status: 500 }
     );
   }
