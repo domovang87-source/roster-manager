@@ -521,17 +521,27 @@ export default function HomePage() {
     setIsCheckoutLoading(true);
     setError(null);
     try {
-      const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ success_url: `${base}/home?session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${base}/home` }),
+        body: JSON.stringify({}),
       });
       const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || data.error) { setError(data.error ?? "Failed to start checkout."); return; }
-      if (data.url) window.location.href = data.url;
-    } catch { setError("Failed to start checkout."); } finally { setIsCheckoutLoading(false); }
+      if (!res.ok || data.error) {
+        setError(data.error ?? `Checkout failed (${res.status}). Check Stripe env vars on Vercel.`);
+        return;
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError("No checkout URL returned. Check STRIPE_PRICE_ID on Vercel.");
+      }
+    } catch (err) {
+      setError(`Checkout error: ${err instanceof Error ? err.message : "unknown"}`);
+    } finally {
+      setIsCheckoutLoading(false);
+    }
   };
 
   const totalProspects = rosterCount;
