@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { Check, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -466,7 +466,7 @@ export default function HomePage() {
     loadDraftsGenerated();
   }, [refetchNarrative]);
 
-  const handleAlreadyPinged = async (prospect: TierProspect, draftSummary?: string) => {
+  const handleTouchedBase = async (prospect: TierProspect, draftSummary?: string) => {
     const client = supabaseRef.current;
     if (!client) return;
     setQuickTouchingId(prospect.id);
@@ -843,150 +843,176 @@ export default function HomePage() {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
-                          {prospect.lastActivityAt ? (
-                            <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                              {formatRelativeTime(prospect.lastActivityAt)}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
-                              —
-                            </span>
-                          )}
+                          <p className="min-w-0 flex-1 truncate text-sm font-semibold">{prospect.name}</p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {prospect.lastActivityAt ? (
+                              <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                                {formatRelativeTime(prospect.lastActivityAt)}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
+                                —
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                draftId
+                                  ? handleDismissCard(prospect, draftId, currentDraft)
+                                  : handleDismissCard(prospect)
+                              }
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-600/60 bg-slate-900/60 text-slate-400 transition hover:border-slate-500 hover:bg-slate-800/80 hover:text-slate-100 active:text-rose-300"
+                              aria-label="Hide card"
+                              title="Hide card — open Hidden cards below to bring back"
+                            >
+                              <X size={14} strokeWidth={1.5} />
+                            </button>
+                          </div>
                         </div>
-
-                        {prospect.lastInboundBody ? (
-                          <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
-                            &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
-                          </p>
-                        ) : null}
 
                         {draftId && currentDraft ? (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => handleDismissCard(prospect, draftId, currentDraft)}
-                              className="absolute right-3 top-3 text-slate-400/25 transition hover:text-slate-300 hover:opacity-100 active:text-rose-300/90"
-                              aria-label="Hide draft card"
-                              title="Hide"
-                            >
-                              <X size={14} strokeWidth={1.5} />
-                            </button>
-                            <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
-                              <span className="text-[1.05em]">{currentDraft}</span>
-                            </p>
-                            <div className="mt-3 flex flex-col gap-3 sm:mt-4">
-                              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const body = encodeURIComponent(currentDraft);
-                                    const urlH =
-                                      prospect.phoneNumber
-                                        ? `sms:${prospect.phoneNumber}?body=${body}`
-                                        : `sms:?body=${body}`;
-                                    window.location.href = urlH;
-                                  }}
-                                  className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/30 py-3 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/40 sm:min-w-0 sm:flex-1 sm:rounded-full sm:py-2.5 sm:tracking-[0.28em]"
-                                >
-                                  <MessageSquare size={14} strokeWidth={1.25} className="opacity-90" />
-                                  TEXT
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleAlreadyPinged(prospect, currentDraft)}
-                                  disabled={quickTouchingId === prospect.id}
-                                  className="flex w-full items-center justify-center rounded-2xl border border-slate-600/45 bg-transparent py-3 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-500/70 hover:bg-slate-900/25 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-35 sm:w-auto sm:min-w-[9.5rem] sm:rounded-full sm:py-2.5"
-                                  title="Log that you already reached out — hides this card below"
-                                  aria-label="Already pinged — log touched base and hide card"
-                                >
-                                  {quickTouchingId === prospect.id ? "Saving…" : "Already pinged"}
-                                </button>
+                            {prospect.lastInboundBody ? (
+                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
+                                &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
+                              </p>
+                            ) : null}
+                            <div className="mt-2 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:gap-3">
+                              <p className="min-w-0 flex-1 text-sm leading-relaxed text-[var(--rm-text)]">
+                                <span className="text-[1.05em]">{currentDraft}</span>
+                              </p>
+                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                <div className="flex max-w-full flex-row flex-wrap justify-end gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
+                                    disabled={isGenerating === prospect.id}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
+                                    title="Regenerate draft"
+                                    aria-label="Regenerate draft"
+                                  >
+                                    <RefreshCw
+                                      size={15}
+                                      strokeWidth={1.35}
+                                      className={isGenerating === prospect.id ? "animate-spin" : ""}
+                                    />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const body = encodeURIComponent(currentDraft);
+                                      const urlH =
+                                        prospect.phoneNumber
+                                          ? `sms:${prospect.phoneNumber}?body=${body}`
+                                          : `sms:?body=${body}`;
+                                      window.location.href = urlH;
+                                    }}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100"
+                                    title="Open Messages with this draft"
+                                    aria-label="Open Messages with draft"
+                                  >
+                                    <MessageSquare size={15} strokeWidth={1.25} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTouchedBase(prospect, currentDraft)}
+                                    disabled={quickTouchingId === prospect.id}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
+                                    title="Touched base — log & hide card"
+                                    aria-label="Touched base"
+                                  >
+                                    {quickTouchingId === prospect.id ? (
+                                      <RefreshCw size={14} strokeWidth={1.35} className="animate-spin" />
+                                    ) : (
+                                      <Check size={15} strokeWidth={1.35} />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => shareDraftText(currentDraft, prospect.name, prospect.id)}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100"
+                                    title="Copy & share draft"
+                                    aria-label="Copy and share draft"
+                                  >
+                                    <Share size={15} strokeWidth={1.2} />
+                                  </button>
+                                </div>
+                                {shareTip?.prospectId === prospect.id ? (
+                                  <p className="max-w-[14rem] text-right text-[9px] leading-snug text-emerald-400/90">
+                                    {shareTip.message}
+                                  </p>
+                                ) : null}
                               </div>
-                              <div className="flex items-center justify-center gap-2 border-t border-slate-800/60 pt-3 sm:justify-end sm:border-0 sm:pt-0 sm:gap-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
-                                  disabled={isGenerating === prospect.id}
-                                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/35 hover:text-slate-400 disabled:pointer-events-none disabled:opacity-30 sm:h-9 sm:w-9"
-                                  title="Try another version"
-                                  aria-label="Regenerate draft"
-                                >
-                                  <RefreshCw
-                                    size={17}
-                                    strokeWidth={1.35}
-                                    className={isGenerating === prospect.id ? "animate-spin" : ""}
-                                  />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => shareDraftText(currentDraft, prospect.name, prospect.id)}
-                                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
-                                  title="Copy & share — paste into Instagram DMs or any app"
-                                  aria-label="Copy draft to clipboard and open share sheet"
-                                >
-                                  <Share size={18} strokeWidth={1.2} />
-                                </button>
-                              </div>
-                              {shareTip?.prospectId === prospect.id ? (
-                                <p className="text-center text-[10px] leading-snug text-emerald-400/90 sm:text-right">
-                                  {shareTip.message}
-                                </p>
-                              ) : null}
                             </div>
                           </>
                         ) : (
-                          <div className="mt-2 flex flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleDismissCard(prospect)}
-                              className="absolute right-3 top-3 text-slate-400/25 transition hover:text-slate-300 hover:opacity-100 active:text-rose-300/90"
-                              aria-label="Hide prospect card"
-                              title="Hide"
-                            >
-                              <X size={14} strokeWidth={1.5} />
-                            </button>
-                            {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
+                          <div className="mt-1.5 space-y-2 sm:mt-2">
+                            {prospect.lastInboundBody ? (
+                              <div className="flex items-start gap-2">
+                                <p className="min-w-0 flex-1 text-[11px] leading-snug text-slate-500 sm:text-xs sm:leading-normal">
+                                  &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    window.location.href = prospect.phoneNumber
+                                      ? `sms:${prospect.phoneNumber}`
+                                      : "sms:";
+                                  }}
+                                  className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
+                                  title="Open Messages"
+                                  aria-label="Open Messages"
+                                >
+                                  <MessageSquare size={13} strokeWidth={1.25} />
+                                </button>
+                              </div>
+                            ) : null}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { setPaywallFeature("AI drafts"); setShowPaywall(true); }}
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]/60 transition hover:border-emerald-500/40 hover:text-emerald-400"
+                                >
+                                  <Lock size={10} strokeWidth={1.5} />
+                                  Generate
+                                  <span className="text-[8px] text-emerald-400/80">Pro</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDraft(prospect)}
+                                  disabled={generatingNoDraft}
+                                  className="inline-flex items-center rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-50"
+                                >
+                                  {generatingNoDraft ? "…" : "Generate"}
+                                </button>
+                              )}
                               <button
                                 type="button"
-                                onClick={() => { setPaywallFeature("AI drafts"); setShowPaywall(true); }}
-                                className="relative flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--rm-border)] py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]/50 transition hover:border-emerald-500/40 hover:text-emerald-400 sm:w-auto sm:justify-start sm:rounded-none sm:px-3 sm:py-1"
+                                onClick={() => handleTouchedBase(prospect)}
+                                disabled={quickTouchingId === prospect.id}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600/40 text-slate-500 transition hover:border-slate-500/60 hover:bg-slate-900/35 hover:text-slate-300 disabled:opacity-35"
+                                title="Touched base — log & hide"
+                                aria-label="Touched base"
                               >
-                                <Lock size={11} strokeWidth={1.5} />
-                                Generate Draft
-                                <span className="ml-0.5 text-[9px] text-emerald-400/80">✦ Pro</span>
+                                {quickTouchingId === prospect.id ? (
+                                  <RefreshCw size={12} className="animate-spin" strokeWidth={1.35} />
+                                ) : (
+                                  <Check size={13} strokeWidth={1.35} />
+                                )}
                               </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleGenerateDraft(prospect)}
-                                disabled={generatingNoDraft}
-                                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--rm-border)] py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60 sm:w-auto sm:rounded-none sm:px-3 sm:py-1"
-                              >
-                                {generatingNoDraft ? "Generating..." : "Generate Draft"}
-                              </button>
-                            )}
-                            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
-                              {prospect.phoneNumber ? (
+                              {!prospect.lastInboundBody && prospect.phoneNumber ? (
                                 <button
                                   type="button"
                                   onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
-                                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/20 py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-slate-500 sm:min-w-0 sm:flex-1 sm:rounded-full sm:py-2.5 sm:text-[10px]"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
+                                  title="Open Messages"
+                                  aria-label="Open Messages"
                                 >
-                                  <MessageSquare size={14} strokeWidth={1.25} />
-                                  Text
+                                  <MessageSquare size={13} strokeWidth={1.25} />
                                 </button>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => handleAlreadyPinged(prospect)}
-                                disabled={quickTouchingId === prospect.id}
-                                className={`flex w-full items-center justify-center rounded-2xl border border-slate-600/45 bg-transparent py-2.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-500/70 hover:bg-slate-900/25 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-35 sm:rounded-full sm:py-2.5 ${prospect.phoneNumber ? "sm:w-auto sm:min-w-[9.5rem]" : ""}`}
-                                title="Log that you already reached out — hides this card below"
-                                aria-label="Already pinged — log touched base and hide card"
-                              >
-                                {quickTouchingId === prospect.id ? "Saving…" : "Already pinged"}
-                              </button>
                             </div>
                           </div>
                         )}
