@@ -8,7 +8,14 @@ const cookieOpts = {
   secure: process.env.NODE_ENV === "production",
 };
 
-export async function GET(req: Request) {
+const clearCookieOpts = {
+  path: "/",
+  maxAge: 0,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+};
+
+export async function GET(_req: Request) {
   let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
   try {
     supabase = await createServerSupabase();
@@ -22,14 +29,13 @@ export async function GET(req: Request) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ pro: false });
+    // Not logged in — clear any stale Pro cookie
+    const res = NextResponse.json({ pro: false });
+    res.cookies.set("stack_pro", "", clearCookieOpts);
+    return res;
   }
 
-  const cookieHeader = req.headers.get("cookie") ?? "";
-  if (cookieHeader.includes("stack_pro=1")) {
-    return NextResponse.json({ pro: true });
-  }
-
+  // Always check the DB — never trust the incoming cookie
   const { data, error } = await supabase
     .from("subscriptions")
     .select("id")
@@ -39,13 +45,19 @@ export async function GET(req: Request) {
 
   if (error) {
     console.error("Check subscription error:", error);
+    // Can't verify — don't grant Pro, but also don't clear (might be a transient error)
     return NextResponse.json({ pro: false, lookupFailed: true });
   }
 
   const pro = (data ?? []).length > 0;
   const response = NextResponse.json({ pro });
+
   if (pro) {
     response.cookies.set("stack_pro", "1", cookieOpts);
+  } else {
+    // Definitively not Pro — clear the cookie server-side too
+    response.cookies.set("stack_pro", "", clearCookieOpts);
   }
+
   return response;
 }
