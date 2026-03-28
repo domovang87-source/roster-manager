@@ -516,8 +516,8 @@ export default function RosterPage() {
       </DndContext>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
+          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
                 New Prospect
@@ -592,8 +592,8 @@ export default function RosterPage() {
       ) : null}
 
       {isEditOpen && editingProspect ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
+          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
                 Edit Prospect
@@ -687,8 +687,8 @@ export default function RosterPage() {
       ) : null}
 
       {selectedProspect ? (
-        <div className="fixed inset-y-0 right-0 z-40 w-full max-w-md border-l border-[var(--rm-border)] bg-[var(--rm-bg)]/95 backdrop-blur">
-          <div className="flex h-full flex-col p-6">
+        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-[var(--rm-border)] bg-[var(--rm-bg)]/95 backdrop-blur">
+          <div className="flex h-full flex-col overflow-hidden p-4 pb-8 sm:p-6 sm:pb-10">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">

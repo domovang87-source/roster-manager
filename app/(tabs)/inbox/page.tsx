@@ -442,8 +442,8 @@ export default function ActivityLogPage() {
 
       {/* Manual Log Modal */}
       {isLogOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 pb-8">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
+          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Log Activity</h2>
               <button type="button" onClick={() => setIsLogOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>
@@ -503,8 +503,8 @@ export default function ActivityLogPage() {
 
       {/* Screenshot Upload Modal */}
       {isScreenshotOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 pb-8">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
+          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Upload Screenshot</h2>
               <button type="button" onClick={resetScreenshotModal} className="text-[var(--rm-text-muted)]">
@@ -681,8 +681,8 @@ export default function ActivityLogPage() {
 
       {/* Edit Log Entry Modal */}
       {isEditOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
+          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Edit Activity</h2>
               <button type="button" onClick={() => setIsEditOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>

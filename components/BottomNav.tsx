@@ -15,19 +15,19 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[var(--rm-border)] bg-[var(--rm-bg)]/95 backdrop-blur">
-      <div className="mx-auto flex max-w-4xl items-center justify-around px-6 py-3">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--rm-border)] bg-[var(--rm-bg)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+      <div className="mx-auto flex max-w-4xl items-center justify-around px-4 py-2 sm:px-6">
         {navItems.map(({ href, label, Icon }) => {
           const isActive = pathname === href;
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-1 text-xs tracking-wide ${
+              className={`flex flex-col items-center gap-0.5 text-[10px] tracking-wide sm:gap-1 sm:text-xs ${
                 isActive ? "text-[var(--rm-text)]" : "text-[var(--rm-text-muted)]"
               }`}
             >
-              <Icon size={18} strokeWidth={1.25} />
+              <Icon size={17} strokeWidth={1.25} />
               <span className="uppercase">{label}</span>
             </Link>
           );

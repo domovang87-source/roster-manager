@@ -55,7 +55,7 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-6">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 px-6">
       <div className="relative w-full max-w-sm border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-7">
 
         {/* Close */}
