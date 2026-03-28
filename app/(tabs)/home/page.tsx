@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Edit2, ImagePlus, LogOut, MessageSquare, Save, Share, UserPlus, X } from "lucide-react";
+import { Edit2, ImagePlus, LogOut, MessageSquare, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -58,6 +58,7 @@ export default function HomePage() {
   const [isGenerating, setIsGenerating] = React.useState<string | null>(null);
   const [showPaywall, setShowPaywall] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
+  const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
   const [dismissingDraftIds, setDismissingDraftIds] = React.useState<Record<string, boolean>>({});
   const [undoToast, setUndoToast] = React.useState<UndoToast | null>(null);
   const [dismissedDrafts, setDismissedDrafts] = React.useState<DismissedDraft[]>([]);
@@ -516,6 +517,23 @@ export default function HomePage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    setIsCheckoutLoading(true);
+    setError(null);
+    try {
+      const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ success_url: `${base}/home?session_id={CHECKOUT_SESSION_ID}`, cancel_url: `${base}/home` }),
+      });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || data.error) { setError(data.error ?? "Failed to start checkout."); return; }
+      if (data.url) window.location.href = data.url;
+    } catch { setError("Failed to start checkout."); } finally { setIsCheckoutLoading(false); }
+  };
+
   const totalProspects = rosterCount;
   const hasProspects = totalProspects > 0;
   const hasActivity = activityCount > 0;
@@ -538,6 +556,23 @@ export default function HomePage() {
           >
             {rosterCount} Prospects
           </Link>
+
+          {isPro ? (
+            <span className="flex items-center gap-1.5 border border-slate-600/50 px-3 py-1.5 text-[10px] uppercase tracking-[0.35em] text-slate-400">
+              <Sparkles size={11} strokeWidth={1.5} className="text-slate-400" />
+              Pro
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubscribe}
+              disabled={isCheckoutLoading}
+              className="text-[10px] uppercase tracking-[0.3em] text-slate-500 transition hover:text-slate-300 disabled:opacity-50"
+            >
+              {isCheckoutLoading ? "…" : "Upgrade"}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={async () => {
