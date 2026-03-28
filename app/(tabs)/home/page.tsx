@@ -575,11 +575,10 @@ export default function HomePage() {
           ) : (
             <button
               type="button"
-              onClick={handleSubscribe}
-              disabled={isCheckoutLoading}
-              className="text-[10px] uppercase tracking-[0.3em] text-slate-500 transition hover:text-slate-300 disabled:opacity-50"
+              onClick={() => setShowPaywall(true)}
+              className="text-[10px] uppercase tracking-[0.3em] text-slate-500 transition hover:text-slate-300"
             >
-              {isCheckoutLoading ? "…" : "Upgrade"}
+              Upgrade
             </button>
           )}
 
