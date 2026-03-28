@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MessageSquare, Heart, Phone, Users, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil } from "lucide-react";
+import { MessageSquare, Heart, Phone, Users, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import {
   parseDatetimeLocalToUtcIso,
@@ -61,6 +61,7 @@ export default function ActivityLogPage() {
   const [editWhen, setEditWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   // Screenshot modal
   const [isScreenshotOpen, setIsScreenshotOpen] = React.useState(false);
@@ -307,6 +308,26 @@ export default function ActivityLogPage() {
     await loadEntries(client);
   };
 
+  const handleDeleteEntry = async (entry: LogEntry) => {
+    const client = supabaseRef.current;
+    if (!client) return;
+    if (!window.confirm(`Delete this log line for ${entry.prospectName}? This cannot be undone.`)) return;
+
+    setDeletingId(entry.id);
+    setError(null);
+    const { error: deleteError } = await client.from("messages").delete().eq("id", entry.id);
+    setDeletingId(null);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    if (editingEntryId === entry.id) {
+      setIsEditOpen(false);
+      setEditingEntryId(null);
+    }
+    await loadEntries(client);
+  };
+
   const filtered = filterProspectId
     ? entries.filter((e) => e.prospectId === filterProspectId)
     : entries;
@@ -412,25 +433,41 @@ export default function ActivityLogPage() {
                   <Icon size={14} strokeWidth={1.25} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold">{entry.prospectName}</p>
                       <span className={`text-[10px] uppercase tracking-[0.2em] ${config.colorClass.split(" ")[0]}`}>
                         {config.label}
                       </span>
                     </div>
-                    <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                      {formatTime(entry.createdAt)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditEntry(entry)}
-                      className="ml-2 text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
-                      aria-label="Edit entry"
-                      title="Edit"
-                    >
-                      <Pencil size={12} strokeWidth={1.5} />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <span className="mr-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                        {formatTime(entry.createdAt)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditEntry(entry)}
+                        className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                        aria-label="Edit entry"
+                        title="Edit"
+                      >
+                        <Pencil size={12} strokeWidth={1.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteEntry(entry)}
+                        disabled={deletingId === entry.id}
+                        className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                        aria-label="Delete log entry"
+                        title="Delete"
+                      >
+                        {deletingId === entry.id ? (
+                          <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
+                        ) : (
+                          <Trash2 size={12} strokeWidth={1.5} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
                 </div>
@@ -729,6 +766,18 @@ export default function ActivityLogPage() {
               {editError ? (<div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">{editError}</div>) : null}
               <button type="button" onClick={handleUpdateEntry} disabled={isUpdating} className="flex w-full items-center justify-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60">
                 {isUpdating ? "Saving..." : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const e = entries.find((x) => x.id === editingEntryId);
+                  if (e) void handleDeleteEntry(e);
+                }}
+                disabled={isUpdating || deletingId === editingEntryId}
+                className="flex w-full items-center justify-center gap-2 border border-rose-900/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-rose-400/90 transition hover:border-rose-700/60 hover:bg-rose-950/30 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 size={12} strokeWidth={1.5} />
+                Delete log
               </button>
             </div>
           </div>

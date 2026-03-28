@@ -176,6 +176,7 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/dismiss-draft", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draft_id: draftId }),
       });
@@ -205,6 +206,7 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/undo-dismiss-draft", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draft_id: toast.draftId }),
       });
@@ -221,7 +223,7 @@ export default function HomePage() {
       });
       setDraftEdits((prev) => ({ ...prev, [toast.draftId]: toast.text }));
       setDismissingDraftIds((prev) => ({ ...prev, [toast.draftId]: false }));
-      setDismissedDrafts((prev) => prev.filter((d) => d.id !== toast.draftId));
+      setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== toast.prospectId));
     } catch {
       setError("Failed to undo dismissal.");
     }
@@ -232,6 +234,7 @@ export default function HomePage() {
       if (draft.draftId) {
         const res = await fetch("/api/undo-dismiss-draft", {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ draft_id: draft.draftId }),
         });
@@ -270,7 +273,7 @@ export default function HomePage() {
         ]);
 
       if (!prospectRow) {
-        setDismissedDrafts((prev) => prev.filter((d) => d.id !== draft.id));
+        setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
         return;
       }
 
@@ -280,7 +283,7 @@ export default function HomePage() {
       const inboundLatest = msgRows.find((r) => r.direction === "inbound");
       const scheduled = (scheduledRows ?? [])[0];
 
-      setDismissedDrafts((prev) => prev.filter((d) => d.id !== draft.id));
+      setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
       setDismissingDraftIds((prev) => {
         const next = { ...prev };
         delete next[draft.id];
@@ -430,9 +433,15 @@ export default function HomePage() {
       const rosterIds = new Set((prospectsRes.data ?? []).map((row) => String(row.id)));
       setDismissedDrafts((prev) => {
         const localOnly = prev.filter((d) => !d.draftId);
-        const map = new Map<string, DismissedDraft>();
-        [...dismissed, ...localOnly].forEach((d) => map.set(d.id, d));
-        return Array.from(map.values()).filter((d) => rosterIds.has(d.prospectId));
+        const combined = [...dismissed, ...localOnly].filter((d) => rosterIds.has(d.prospectId));
+        const byProspect = new Map<string, DismissedDraft>();
+        for (const d of combined) {
+          const cur = byProspect.get(d.prospectId);
+          if (!cur || (d.draftId && !cur.draftId)) {
+            byProspect.set(d.prospectId, d);
+          }
+        }
+        return Array.from(byProspect.values());
       });
       setRosterCount((prospectsRes.data ?? []).length);
     };
@@ -502,6 +511,7 @@ export default function HomePage() {
       try {
         const res = await fetch("/api/dismiss-draft", {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ draft_id: prospect.draftId }),
         });
