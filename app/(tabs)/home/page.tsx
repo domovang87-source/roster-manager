@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Edit2, ImagePlus, Lock, LogOut, MessageSquare, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { Edit2, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -454,8 +454,12 @@ export default function HomePage() {
     setEditingDraftId(null);
   };
 
-  const handleGenerateDraft = async (prospect: TierProspect) => {
-    if (!isPro && draftsEverGenerated >= FREE_AI_DRAFTS) {
+  const handleGenerateDraft = async (
+    prospect: TierProspect,
+    opts?: { regenerate?: boolean }
+  ) => {
+    const regenerating = Boolean(opts?.regenerate && prospect.draftId);
+    if (!regenerating && !isPro && draftsEverGenerated >= FREE_AI_DRAFTS) {
       setPaywallFeature("AI drafts");
       setShowPaywall(true);
       return;
@@ -466,6 +470,7 @@ export default function HomePage() {
       const res = await fetch("/api/generate-response", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
           tier: prospect.tier,
           name: prospect.name,
@@ -486,10 +491,35 @@ export default function HomePage() {
       }
       const client = supabaseRef.current;
       if (!client) return;
+
+      if (regenerating && prospect.draftId) {
+        const { data: updated, error: upErr } = await client
+          .from("scheduled_replies")
+          .update({ draft_text: draftText })
+          .eq("id", prospect.draftId)
+          .select("id,draft_text")
+          .single();
+        if (upErr || !updated) {
+          setError(upErr?.message ?? "Failed to update draft.");
+          return;
+        }
+        const id = String(updated.id);
+        const text = String(updated.draft_text ?? "");
+        setEditingDraftId(null);
+        setTierProspects((prev) => {
+          const next = { ...prev };
+          next[prospect.tier] = next[prospect.tier].map((p) =>
+            p.id === prospect.id ? { ...p, draftId: id, draftText: text } : p
+          );
+          return next;
+        });
+        setDraftEdits((prev) => ({ ...prev, [id]: text }));
+        return;
+      }
+
       // DB compatibility: some schema versions only allow scheduled_replies.tier in ('B','C').
       const queueTier = prospect.tier === "A" ? "B" : prospect.tier;
       const insertPayloads: Array<Record<string, unknown>> = [
-        // Prefer DB default status to avoid check-constraint mismatches.
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText },
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText, status: "scheduled" },
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText, status: "pending" },
@@ -789,6 +819,20 @@ export default function HomePage() {
                                 TEXT
                               </button>
                               <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
+                                  disabled={isGenerating === prospect.id}
+                                  className="rounded-full p-2 text-slate-500/35 transition hover:bg-slate-800/35 hover:text-slate-400 disabled:pointer-events-none disabled:opacity-30"
+                                  title="Try another version"
+                                  aria-label="Regenerate draft"
+                                >
+                                  <RefreshCw
+                                    size={16}
+                                    strokeWidth={1.35}
+                                    className={isGenerating === prospect.id ? "animate-spin" : ""}
+                                  />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => shareDraftText(currentDraft, prospect.name)}
