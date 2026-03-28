@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CircleCheck, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -65,6 +65,7 @@ export default function HomePage() {
   const [dismissedDrafts, setDismissedDrafts] = React.useState<DismissedDraft[]>([]);
   const [dismissedOpen, setDismissedOpen] = React.useState(false);
   const [quickTouchingId, setQuickTouchingId] = React.useState<string | null>(null);
+  const [touchBaseToast, setTouchBaseToast] = React.useState<string | null>(null);
   const messagesEventTypeRef = React.useRef(true);
   const { isPro, markPro } = useProStatus();
   const searchParams = useSearchParams();
@@ -269,7 +270,7 @@ export default function HomePage() {
         ]);
 
       if (!prospectRow) {
-        setError("Failed to restore draft.");
+        setDismissedDrafts((prev) => prev.filter((d) => d.id !== draft.id));
         return;
       }
 
@@ -426,11 +427,12 @@ export default function HomePage() {
 
       setTierProspects(result);
       setDraftEdits(edits);
+      const rosterIds = new Set((prospectsRes.data ?? []).map((row) => String(row.id)));
       setDismissedDrafts((prev) => {
         const localOnly = prev.filter((d) => !d.draftId);
         const map = new Map<string, DismissedDraft>();
         [...dismissed, ...localOnly].forEach((d) => map.set(d.id, d));
-        return Array.from(map.values());
+        return Array.from(map.values()).filter((d) => rosterIds.has(d.prospectId));
       });
       setRosterCount((prospectsRes.data ?? []).length);
     };
@@ -455,7 +457,7 @@ export default function HomePage() {
     loadDraftsGenerated();
   }, [refetchNarrative]);
 
-  const handleQuickTouch = async (prospect: TierProspect) => {
+  const handleAlreadyPinged = async (prospect: TierProspect, draftSummary?: string) => {
     const client = supabaseRef.current;
     if (!client) return;
     setQuickTouchingId(prospect.id);
@@ -482,14 +484,39 @@ export default function HomePage() {
       return;
     }
 
-    setTierProspects((prev) => ({
-      ...prev,
-      [prospect.tier]: prev[prospect.tier].map((p) =>
-        p.id === prospect.id ? { ...p, lastActivityAt: createdAt } : p
-      ),
-    }));
+    const dismissKey = prospect.draftId || prospect.id;
+    setDismissedDrafts((prev) => [
+      {
+        id: dismissKey,
+        prospectId: prospect.id,
+        prospectName: prospect.name,
+        tier: prospect.tier,
+        text: draftSummary ?? prospect.draftText,
+        draftId: prospect.draftId,
+        dismissedAt: createdAt,
+      },
+      ...prev.filter((d) => d.id !== dismissKey),
+    ]);
+
+    if (prospect.draftId) {
+      try {
+        const res = await fetch("/api/dismiss-draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draft_id: prospect.draftId }),
+        });
+        if (!res.ok) {
+          setError("Logged touch, but could not sync hidden draft to the server.");
+        }
+      } catch {
+        setError("Logged touch, but could not sync hidden draft to the server.");
+      }
+    }
+
     setActivityCount((c) => c + 1);
     setQuickTouchingId(null);
+    setTouchBaseToast(`${prospect.name} moved to Recent.`);
+    window.setTimeout(() => setTouchBaseToast(null), 1000);
     await refetchNarrative();
   };
 
@@ -686,10 +713,16 @@ export default function HomePage() {
         </div>
       ) : null}
 
+      {touchBaseToast ? (
+        <div className="fixed bottom-6 left-1/2 z-[75] -translate-x-1/2 border border-emerald-500/30 bg-[var(--rm-bg-elevated)] px-4 py-2.5 text-sm text-emerald-100/95 shadow-lg">
+          {touchBaseToast}
+        </div>
+      ) : null}
+
       {undoToast ? (
         <div className="fixed right-4 top-4 z-[70] border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-sm shadow-lg">
           <div className="flex items-center gap-3">
-            <span className="text-[var(--rm-text-muted)]">Draft dismissed</span>
+            <span className="text-[var(--rm-text-muted)]">Draft hidden</span>
             <button
               type="button"
               onClick={handleUndoDismiss}
@@ -801,31 +834,15 @@ export default function HomePage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
-                          <div className="flex shrink-0 items-center gap-1">
-                            {prospect.lastActivityAt ? (
-                              <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                                {formatRelativeTime(prospect.lastActivityAt)}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
-                                —
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleQuickTouch(prospect)}
-                              disabled={quickTouchingId === prospect.id}
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500/35 transition hover:bg-slate-800/40 hover:text-emerald-400/80 disabled:pointer-events-none disabled:opacity-25"
-                              title="Touched base — logs a note and refreshes the AI summary"
-                              aria-label="Log that you touched base; updates activity and AI summary"
-                            >
-                              <CircleCheck
-                                size={16}
-                                strokeWidth={1.35}
-                                className={quickTouchingId === prospect.id ? "animate-pulse" : ""}
-                              />
-                            </button>
-                          </div>
+                          {prospect.lastActivityAt ? (
+                            <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                              {formatRelativeTime(prospect.lastActivityAt)}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
+                              —
+                            </span>
+                          )}
                         </div>
 
                         {prospect.lastInboundBody ? (
@@ -840,31 +857,43 @@ export default function HomePage() {
                               type="button"
                               onClick={() => handleDismissCard(prospect, draftId, currentDraft)}
                               className="absolute right-3 top-3 text-slate-400/25 transition hover:text-slate-300 hover:opacity-100 active:text-rose-300/90"
-                              aria-label="Dismiss draft"
-                              title="Dismiss"
+                              aria-label="Hide draft card"
+                              title="Hide"
                             >
                               <X size={14} strokeWidth={1.5} />
                             </button>
                             <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
                               <span className="text-[1.05em]">{currentDraft}</span>
                             </p>
-                            <div className="mt-3 flex flex-col gap-3 sm:mt-4 sm:flex-row sm:items-center sm:gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const body = encodeURIComponent(currentDraft);
-                                  const urlH =
-                                    prospect.phoneNumber
-                                      ? `sms:${prospect.phoneNumber}?body=${body}`
-                                      : `sms:?body=${body}`;
-                                  window.location.href = urlH;
-                                }}
-                                className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/30 py-3 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/40 sm:w-auto sm:justify-start sm:rounded-full sm:px-5 sm:py-2 sm:tracking-[0.28em]"
-                              >
-                                <MessageSquare size={14} strokeWidth={1.25} className="opacity-90" />
-                                TEXT
-                              </button>
-                              <div className="flex items-center justify-center gap-2 border-t border-slate-800/60 pt-3 sm:ml-auto sm:border-0 sm:pt-0 sm:gap-0.5">
+                            <div className="mt-3 flex flex-col gap-3 sm:mt-4">
+                              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const body = encodeURIComponent(currentDraft);
+                                    const urlH =
+                                      prospect.phoneNumber
+                                        ? `sms:${prospect.phoneNumber}?body=${body}`
+                                        : `sms:?body=${body}`;
+                                    window.location.href = urlH;
+                                  }}
+                                  className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/30 py-3 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/40 sm:min-w-0 sm:flex-1 sm:rounded-full sm:py-2.5 sm:tracking-[0.28em]"
+                                >
+                                  <MessageSquare size={14} strokeWidth={1.25} className="opacity-90" />
+                                  TEXT
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAlreadyPinged(prospect, currentDraft)}
+                                  disabled={quickTouchingId === prospect.id}
+                                  className="flex w-full items-center justify-center rounded-2xl border border-slate-600/45 bg-transparent py-3 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-500/70 hover:bg-slate-900/25 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-35 sm:w-auto sm:min-w-[9.5rem] sm:rounded-full sm:py-2.5"
+                                  title="Log that you already reached out — hides this card below"
+                                  aria-label="Already pinged — log touched base and hide card"
+                                >
+                                  {quickTouchingId === prospect.id ? "Saving…" : "Already pinged"}
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-center gap-2 border-t border-slate-800/60 pt-3 sm:justify-end sm:border-0 sm:pt-0 sm:gap-0.5">
                                 <button
                                   type="button"
                                   onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
@@ -889,21 +918,21 @@ export default function HomePage() {
                                   <Share size={18} strokeWidth={1.2} />
                                 </button>
                               </div>
-                            {shareTip?.prospectId === prospect.id ? (
-                              <p className="mt-2 text-center text-[10px] leading-snug text-emerald-400/90 sm:text-left">
-                                {shareTip.message}
-                              </p>
-                            ) : null}
+                              {shareTip?.prospectId === prospect.id ? (
+                                <p className="text-center text-[10px] leading-snug text-emerald-400/90 sm:text-right">
+                                  {shareTip.message}
+                                </p>
+                              ) : null}
                             </div>
                           </>
                         ) : (
-                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                          <div className="mt-2 flex flex-col gap-2">
                             <button
                               type="button"
                               onClick={() => handleDismissCard(prospect)}
                               className="absolute right-3 top-3 text-slate-400/25 transition hover:text-slate-300 hover:opacity-100 active:text-rose-300/90"
-                              aria-label="Dismiss prospect card"
-                              title="Dismiss"
+                              aria-label="Hide prospect card"
+                              title="Hide"
                             >
                               <X size={14} strokeWidth={1.5} />
                             </button>
@@ -927,16 +956,28 @@ export default function HomePage() {
                                 {generatingNoDraft ? "Generating..." : "Generate Draft"}
                               </button>
                             )}
-                            {prospect.phoneNumber ? (
+                            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2">
+                              {prospect.phoneNumber ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
+                                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/20 py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-slate-500 sm:min-w-0 sm:flex-1 sm:rounded-full sm:py-2.5 sm:text-[10px]"
+                                >
+                                  <MessageSquare size={14} strokeWidth={1.25} />
+                                  Text
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
-                                onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
-                                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/20 py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-slate-500 sm:w-auto sm:rounded-none sm:border-[var(--rm-border)] sm:bg-transparent sm:px-3 sm:py-1"
+                                onClick={() => handleAlreadyPinged(prospect)}
+                                disabled={quickTouchingId === prospect.id}
+                                className={`flex w-full items-center justify-center rounded-2xl border border-slate-600/45 bg-transparent py-2.5 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-500/70 hover:bg-slate-900/25 hover:text-slate-300 disabled:pointer-events-none disabled:opacity-35 sm:rounded-full sm:py-2.5 ${prospect.phoneNumber ? "sm:w-auto sm:min-w-[9.5rem]" : ""}`}
+                                title="Log that you already reached out — hides this card below"
+                                aria-label="Already pinged — log touched base and hide card"
                               >
-                                <MessageSquare size={14} strokeWidth={1.25} />
-                                Text
+                                {quickTouchingId === prospect.id ? "Saving…" : "Already pinged"}
                               </button>
-                            ) : null}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -956,7 +997,7 @@ export default function HomePage() {
             onClick={() => setDismissedOpen((v) => !v)}
             className="flex w-full items-center justify-between border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-left text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
           >
-            <span>Dismissed Drafts ({dismissedDrafts.length})</span>
+            <span>Hidden cards ({dismissedDrafts.length})</span>
             <span>{dismissedOpen ? "Hide" : "View"}</span>
           </button>
           {dismissedOpen ? (
@@ -973,7 +1014,7 @@ export default function HomePage() {
                     {draft.text ? (
                       <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{draft.text}</p>
                     ) : (
-                      <p className="mt-1 text-xs text-[var(--rm-text-muted)]">Card dismissed from active feed.</p>
+                      <p className="mt-1 text-xs text-[var(--rm-text-muted)]">Hidden from the main feed.</p>
                     )}
                     
                   </div>

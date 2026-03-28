@@ -86,6 +86,8 @@ export default function RosterPage() {
   const { isPro } = useProStatus();
   const { userId } = useSession();
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
+  const [deleteConfirmStep, setDeleteConfirmStep] = React.useState(false);
+  const [deletePhrase, setDeletePhrase] = React.useState("");
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -363,6 +365,8 @@ export default function RosterPage() {
     setEditTier(prospect.tier);
     setEditNote(prospect.note ?? "");
     setEditPhone(prospect.phoneNumber ?? "");
+    setDeleteConfirmStep(false);
+    setDeletePhrase("");
     setIsEditOpen(true);
   };
 
@@ -429,11 +433,14 @@ export default function RosterPage() {
     setEditingProspect(null);
   };
 
-  const handleDeleteProspect = async (prospect: Prospect) => {
+  const handleDeleteProspect = async () => {
+    const prospect = editingProspect;
     const client = supabaseRef.current;
-    if (!client) return;
-    const confirmed = window.confirm(`Delete ${prospect.name}?`);
-    if (!confirmed) return;
+    if (!client || !prospect) return;
+    if (deletePhrase.trim().toLowerCase() !== "delete") {
+      setError('Type the word "delete" to confirm removal.');
+      return;
+    }
 
     setError(null);
     const { error: deleteError } = await client
@@ -454,6 +461,11 @@ export default function RosterPage() {
     if (selectedProspect?.id === prospect.id) {
       setSelectedProspect(null);
     }
+
+    setDeleteConfirmStep(false);
+    setDeletePhrase("");
+    setIsEditOpen(false);
+    setEditingProspect(null);
   };
 
   return (
@@ -600,7 +612,12 @@ export default function RosterPage() {
               </h2>
               <button
                 type="button"
-                onClick={() => setIsEditOpen(false)}
+                onClick={() => {
+                  setIsEditOpen(false);
+                  setEditingProspect(null);
+                  setDeleteConfirmStep(false);
+                  setDeletePhrase("");
+                }}
                 className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
               >
                 Close
@@ -655,19 +672,69 @@ export default function RosterPage() {
               </label>
             </div>
 
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
-              <button
-                type="button"
-                onClick={() => handleDeleteProspect(editingProspect)}
-                className="flex min-h-11 w-full items-center justify-center gap-1.5 border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto sm:justify-start"
-              >
-                <Trash2 size={12} strokeWidth={1.25} />
-                Delete
-              </button>
+            {deleteConfirmStep ? (
+              <div className="mt-6 space-y-3 rounded border border-rose-900/40 bg-rose-950/20 p-4">
+                <p className="text-xs leading-relaxed text-rose-200/90">
+                  This permanently removes{" "}
+                  <span className="font-medium text-rose-100">{editingProspect.name}</span> from your roster.
+                  Their messages and AI drafts are deleted with them. This cannot be undone.
+                </p>
+                <label className="flex flex-col gap-1.5 text-[10px] uppercase tracking-[0.25em] text-rose-200/65">
+                  Type delete to confirm
+                  <input
+                    type="text"
+                    value={deletePhrase}
+                    onChange={(event) => setDeletePhrase(event.target.value)}
+                    placeholder="delete"
+                    autoComplete="off"
+                    className="h-10 border border-rose-900/50 bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40"
+                  />
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteConfirmStep(false);
+                      setDeletePhrase("");
+                    }}
+                    className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteProspect()}
+                    disabled={deletePhrase.trim().toLowerCase() !== "delete"}
+                    className="min-h-11 w-full border border-rose-700/60 bg-rose-950/40 px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-rose-200 transition hover:border-rose-600 hover:bg-rose-950/55 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                  >
+                    Permanently delete
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div
+              className={`mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 ${deleteConfirmStep ? "sm:justify-end" : "sm:justify-between"}`}
+            >
+              {!deleteConfirmStep ? (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmStep(true)}
+                  className="flex min-h-11 w-full items-center justify-center gap-1.5 border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto sm:justify-start"
+                >
+                  <Trash2 size={12} strokeWidth={1.25} />
+                  Delete
+                </button>
+              ) : null}
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end sm:gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsEditOpen(false)}
+                  onClick={() => {
+                    setIsEditOpen(false);
+                    setEditingProspect(null);
+                    setDeleteConfirmStep(false);
+                    setDeletePhrase("");
+                  }}
                   className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
                 >
                   Cancel
