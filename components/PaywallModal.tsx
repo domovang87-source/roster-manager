@@ -10,8 +10,8 @@ type Props = {
 };
 
 const PLANS = {
-  yearly:  { label: "Yearly",  price: "$250",  sub: "$20.83 / mo · billed annually", badge: "Save 40%" },
-  monthly: { label: "Monthly", price: "$9.99", sub: "billed monthly",                badge: null },
+  yearly:  { label: "Yearly",  price: "$250",  sub: "$20.83 / mo · billed annually", badge: "Save 28%" },
+  monthly: { label: "Monthly", price: "$29",   sub: "billed monthly",                badge: null },
 };
 
 export default function PaywallModal({ isOpen, onClose, feature }: Props) {
