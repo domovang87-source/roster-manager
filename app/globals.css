@@ -20,7 +20,13 @@
   border-color: var(--rm-border);
 }
 
+html {
+  font-size: 90%;
+}
+
 body {
+  min-height: 100dvh;
+  min-height: 100vh;
   background: var(--rm-bg);
   color: var(--rm-text);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;

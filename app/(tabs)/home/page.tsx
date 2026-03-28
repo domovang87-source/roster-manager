@@ -597,23 +597,23 @@ export default function HomePage() {
   const tierLabels: Record<Tier, string> = { A: "A Tier", B: "B Tier", C: "C Tier" };
 
   return (
-    <div className="space-y-5 sm:space-y-8">
+    <div className="space-y-3 sm:space-y-8">
       {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
-        <div className="space-y-1 sm:space-y-3">
+      <header className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
+        <div className="space-y-0.5 sm:space-y-3">
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <Link
             href="/roster"
-            className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
+            className="border border-[var(--rm-border)] px-2.5 py-1 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.4em]"
           >
             {rosterCount} Prospects
           </Link>
 
           {isPro ? (
-            <span className="flex items-center gap-1.5 border border-emerald-500/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.35em] text-emerald-400">
-              <Sparkles size={11} strokeWidth={1.5} />
+            <span className="flex items-center gap-1 border border-emerald-500/40 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em] text-emerald-400 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.35em]">
+              <Sparkles size={10} strokeWidth={1.5} />
               Pro
             </span>
           ) : (
@@ -728,9 +728,9 @@ export default function HomePage() {
 
       {/* AI Summary — only show when there's actual data */}
       {hasProspects && hasActivity ? (
-        <section className="space-y-1.5 sm:space-y-2">
-          <p className="text-[10px] uppercase tracking-[0.45em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.5em]">AI Summary</p>
-          <p className="text-xs text-[var(--rm-text-muted)] sm:text-sm">
+        <section className="space-y-0.5 py-0.5 sm:space-y-2 sm:py-0">
+          <p className="text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.5em]">AI Summary</p>
+          <p className="text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-sm sm:leading-normal">
             {loadingNarrative ? "Generating summary..." : synopsis}
           </p>
         </section>
@@ -743,11 +743,11 @@ export default function HomePage() {
             const visibleProspects = tierProspects[tier].filter((p) => !dismissedProspectIds.has(p.id));
             if (visibleProspects.length === 0) return null;
             return (
-              <section key={tier} className="space-y-2 sm:space-y-3">
-                <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.4em]">
+              <section key={tier} className="space-y-1 sm:space-y-3">
+                <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.4em]">
                   {tierLabels[tier]}
                 </p>
-                <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3 sm:space-y-3 sm:p-4">
+                <div className="space-y-1.5 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 sm:space-y-3 sm:p-4">
                   {visibleProspects.map((prospect) => {
                     const draftId = prospect.draftId;
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
@@ -758,7 +758,7 @@ export default function HomePage() {
                     return (
                       <div
                         key={prospect.id}
-                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3 transition-opacity duration-200 sm:p-5 ${
+                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-200 sm:p-5 ${
                           dismissingDraftIds[dismissKey] ? "opacity-0" : "opacity-100"
                         }`}
                       >
@@ -798,11 +798,11 @@ export default function HomePage() {
                                 className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
                               />
                             ) : (
-                              <p className="mt-3 text-sm text-[var(--rm-text)]">
+                              <p className="mt-2 text-sm leading-snug text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
                                 {currentDraft}
                               </p>
                             )}
-                            <div className="mt-4 flex items-center gap-2">
+                            <div className="mt-3 flex items-center gap-1.5 sm:mt-4 sm:gap-2">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -813,7 +813,7 @@ export default function HomePage() {
                                       : `sms:?body=${body}`;
                                   window.location.href = urlH;
                                 }}
-                                className="flex shrink-0 items-center gap-2 rounded-full border border-slate-700 bg-slate-950/20 px-5 py-2 text-[10px] font-medium uppercase tracking-[0.28em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/35"
+                                className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/20 px-3.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/35 sm:gap-2 sm:px-5 sm:py-2 sm:tracking-[0.28em]"
                               >
                                 <MessageSquare size={14} strokeWidth={1.25} className="opacity-90" />
                                 TEXT
