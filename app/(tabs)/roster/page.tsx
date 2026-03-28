@@ -516,8 +516,8 @@ export default function RosterPage() {
       </DndContext>
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
+          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
                 New Prospect
@@ -570,11 +570,11 @@ export default function RosterPage() {
               </label>
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-3">
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
               >
                 Cancel
               </button>
@@ -582,7 +582,7 @@ export default function RosterPage() {
                 type="button"
                 onClick={handleCreateProspect}
                 disabled={isSaving}
-                className="border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-11 w-full border border-[var(--rm-text)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isSaving ? "Saving..." : "Save"}
               </button>
@@ -592,8 +592,8 @@ export default function RosterPage() {
       ) : null}
 
       {isEditOpen && editingProspect ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
+          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
                 Edit Prospect
@@ -655,20 +655,20 @@ export default function RosterPage() {
               </label>
             </div>
 
-            <div className="mt-6 flex items-center justify-between gap-3">
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
               <button
                 type="button"
                 onClick={() => handleDeleteProspect(editingProspect)}
-                className="flex items-center gap-1 border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                className="flex min-h-11 w-full items-center justify-center gap-1.5 border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto sm:justify-start"
               >
                 <Trash2 size={12} strokeWidth={1.25} />
                 Delete
               </button>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}
-                  className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                  className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
                 >
                   Cancel
                 </button>
@@ -676,7 +676,7 @@ export default function RosterPage() {
                   type="button"
                   onClick={handleSaveEdit}
                   disabled={isSaving}
-                  className="border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-11 w-full border border-[var(--rm-text)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {isSaving ? "Saving..." : "Save"}
                 </button>
