@@ -3,13 +3,13 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Edit2, ImagePlus, LogOut, MessageSquare, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { Edit2, ImagePlus, Lock, LogOut, MessageSquare, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
 import { useProStatus } from "../../../lib/use-pro-status";
 
-const FREE_ROSTER_LIMIT = 1;
+const FREE_AI_DRAFTS = 1; // free users get this many drafts before paywall
 
 type Tier = "A" | "B" | "C";
 
@@ -59,6 +59,7 @@ export default function HomePage() {
   const [showPaywall, setShowPaywall] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
   const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
+  const [draftsEverGenerated, setDraftsEverGenerated] = React.useState(0);
   const [dismissingDraftIds, setDismissingDraftIds] = React.useState<Record<string, boolean>>({});
   const [undoToast, setUndoToast] = React.useState<UndoToast | null>(null);
   const [dismissedDrafts, setDismissedDrafts] = React.useState<DismissedDraft[]>([]);
@@ -426,9 +427,17 @@ export default function HomePage() {
       setActivityCount(count ?? 0);
     };
 
+    const loadDraftsGenerated = async () => {
+      const { count } = await client
+        .from("scheduled_replies")
+        .select("id", { count: "exact", head: true });
+      setDraftsEverGenerated(count ?? 0);
+    };
+
     loadNarrative();
     loadTierProspects();
     loadActivityCount();
+    loadDraftsGenerated();
   }, []);
 
   const handleSaveDraft = async (draftId: string) => {
@@ -442,8 +451,8 @@ export default function HomePage() {
   };
 
   const handleGenerateDraft = async (prospect: TierProspect) => {
-    if (!isPro && rosterCount > FREE_ROSTER_LIMIT) {
-      setPaywallFeature("AI draft generation");
+    if (!isPro && draftsEverGenerated >= FREE_AI_DRAFTS) {
+      setPaywallFeature("AI drafts");
       setShowPaywall(true);
       return;
     }
@@ -510,6 +519,7 @@ export default function HomePage() {
         return next;
       });
       setDraftEdits((prev) => ({ ...prev, [inserted.id]: inserted.draftText }));
+      setDraftsEverGenerated((n) => n + 1);
     } catch {
       setError("Failed to generate draft.");
     } finally {
@@ -627,36 +637,36 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* Onboarding: no prospects yet */}
+      {/* Onboarding step 1: no prospects yet */}
       {!hasProspects ? (
         <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 1 of 2</p>
-          <h2 className="mt-2 text-base font-semibold tracking-wide">Build your roster</h2>
+          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 1 of 3</p>
+          <h2 className="mt-2 text-base font-semibold tracking-wide">Who are you texting right now?</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Add someone you&apos;re talking to. Rank them A, B, or C — the AI uses this to match your energy.
+            Add them to your roster. Rank them A, B, or C — the AI uses this to calibrate your tone.
           </p>
           <Link
             href="/roster"
             className="mt-4 flex w-fit items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
           >
             <UserPlus size={13} strokeWidth={1.25} />
-            Add First Person
+            Add them
           </Link>
         </section>
       ) : null}
 
-      {/* Onboarding: has prospects but no activity */}
+      {/* Onboarding step 2: has prospects but no activity */}
       {hasProspects && !hasActivity ? (
         <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-400/70">Step 2 of 2</p>
-          <h2 className="mt-2 text-base font-semibold tracking-wide">Feed the AI</h2>
+          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 2 of 3</p>
+          <h2 className="mt-2 text-base font-semibold tracking-wide">Drop your last convo</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Drop a screenshot of your texts. The AI reads the convo and writes drafts in your voice.
+            Screenshot your texts. The AI reads them so it knows exactly what to say next.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/inbox"
-              className="flex items-center gap-2 rounded-full border border-emerald-500/40 px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-emerald-400 transition hover:border-emerald-400 hover:bg-emerald-400/10"
+              className="flex items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
             >
               <ImagePlus size={13} strokeWidth={1.25} />
               Upload Screenshot
@@ -668,6 +678,17 @@ export default function HomePage() {
               Log Manually
             </Link>
           </div>
+        </section>
+      ) : null}
+
+      {/* Onboarding step 3: has activity but hasn't generated a draft yet */}
+      {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
+        <section className="border border-emerald-500/30 bg-emerald-500/5 p-6">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-400/70">Step 3 of 3 · Free</p>
+          <h2 className="mt-2 text-base font-semibold tracking-wide">Get your first AI draft</h2>
+          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
+            Tap <span className="text-[var(--rm-text)]">Generate Draft</span> on any card below. Your first one is on us — see exactly what you&apos;ve been missing.
+          </p>
         </section>
       ) : null}
 
@@ -808,14 +829,26 @@ export default function HomePage() {
                             >
                               <X size={14} strokeWidth={1.5} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleGenerateDraft(prospect)}
-                              disabled={generatingNoDraft}
-                              className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60"
-                            >
-                              {generatingNoDraft ? "Generating..." : "Generate Draft"}
-                            </button>
+                            {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
+                              <button
+                                type="button"
+                                onClick={() => { setPaywallFeature("AI drafts"); setShowPaywall(true); }}
+                                className="relative flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]/50 transition hover:border-emerald-500/40 hover:text-emerald-400"
+                              >
+                                <Lock size={11} strokeWidth={1.5} />
+                                Generate Draft
+                                <span className="ml-0.5 text-[9px] text-emerald-400/80">✦ Pro</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleGenerateDraft(prospect)}
+                                disabled={generatingNoDraft}
+                                className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60"
+                              >
+                                {generatingNoDraft ? "Generating..." : "Generate Draft"}
+                              </button>
+                            )}
                             {prospect.phoneNumber ? (
                               <button
                                 type="button"

@@ -11,7 +11,8 @@ import { useSession } from "../../../lib/use-session";
 
 const DEFAULT_REMIND_DAYS: Record<string, number> = { A: 7, B: 14, C: 30 };
 
-const FREE_ROSTER_LIMIT = 1;
+// Roster is unlimited on free — AI drafts are the gated feature
+const FREE_ROSTER_LIMIT = Infinity;
 
 type Tier = "A" | "B" | "C";
 

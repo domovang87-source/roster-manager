@@ -10,10 +10,10 @@ type Props = {
 };
 
 const PERKS = [
-  "Unlimited roster members",
-  "AI drafts in your voice",
-  "Never ghost — smart reminders",
-  "Tier your circle A / B / C",
+  "Unlimited AI reply drafts in your voice",
+  "Never ghost — smart follow-up reminders",
+  "Unlimited roster — no cap",
+  "Tone personalization by tier (A / B / C)",
 ];
 
 export default function PaywallModal({ isOpen, onClose, feature }: Props) {
