@@ -629,43 +629,43 @@ export default function HomePage() {
 
       {/* Onboarding: no prospects yet */}
       {!hasProspects ? (
-        <section className="space-y-4 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
-          <h2 className="text-lg font-semibold tracking-wide">Get started</h2>
-          <p className="text-sm text-[var(--rm-text-muted)]">
-            Add your first roster member free. Rank them A, B, or C tier. Add notes so the AI knows who they are.
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 1 of 2</p>
+          <h2 className="mt-2 text-base font-semibold tracking-wide">Build your roster</h2>
+          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
+            Add someone you&apos;re talking to. Rank them A, B, or C — the AI uses this to match your energy.
           </p>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/roster"
-              className="flex items-center gap-2 border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
-            >
-              <UserPlus size={14} strokeWidth={1.25} />
-              Add to Roster
-            </Link>
-          </div>
+          <Link
+            href="/roster"
+            className="mt-4 flex w-fit items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
+          >
+            <UserPlus size={13} strokeWidth={1.25} />
+            Add First Person
+          </Link>
         </section>
       ) : null}
 
       {/* Onboarding: has prospects but no activity */}
       {hasProspects && !hasActivity ? (
-        <section className="space-y-4 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
-          <h2 className="text-lg font-semibold tracking-wide">Next step</h2>
-          <p className="text-sm text-[var(--rm-text-muted)]">
-            Upload a screenshot of your texts or log an interaction. The AI uses your activity log to write better drafts.
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-400/70">Step 2 of 2</p>
+          <h2 className="mt-2 text-base font-semibold tracking-wide">Feed the AI</h2>
+          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
+            Drop a screenshot of your texts. The AI reads the convo and writes drafts in your voice.
           </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href="/inbox"
-              className="flex items-center gap-2 border border-blue-400/50 px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
+              className="flex items-center gap-2 rounded-full border border-emerald-500/40 px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-emerald-400 transition hover:border-emerald-400 hover:bg-emerald-400/10"
             >
-              <ImagePlus size={14} strokeWidth={1.25} />
+              <ImagePlus size={13} strokeWidth={1.25} />
               Upload Screenshot
             </Link>
             <Link
               href="/inbox"
-              className="flex items-center gap-2 border border-[var(--rm-border)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
+              className="flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] hover:text-[var(--rm-text)]"
             >
-              Log Activity
+              Log Manually
             </Link>
           </div>
         </section>
