@@ -2,56 +2,48 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-const LS_KEY = "stack_pro";
-const COOKIE_KEY = "stack_pro=1";
+function clearProCache() {
+  try { localStorage.removeItem("stack_pro"); } catch { /* ignore */ }
+  document.cookie = "stack_pro=; path=/; max-age=0; samesite=lax";
+}
+
+function setProCache() {
+  try { localStorage.setItem("stack_pro", "1"); } catch { /* ignore */ }
+  document.cookie = "stack_pro=1; path=/; max-age=31536000; samesite=lax";
+}
 
 export function useProStatus() {
-  const [isPro, setIsPro] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(LS_KEY) === "1";
-  });
+  // Start as false — never trust localStorage alone. Server is the source of truth.
+  const [isPro, setIsPro] = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    const cachedPro =
-      localStorage.getItem(LS_KEY) === "1" ||
-      document.cookie.includes(COOKIE_KEY);
-    if (cachedPro) {
-      setIsPro(true);
-      setChecked(true);
-    }
-
     fetch("/api/check-subscription", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: { pro?: boolean; lookupFailed?: boolean }) => {
         if (data.lookupFailed) {
-          // Table missing / PostgREST error — don't clear a working local Pro state.
+          // Can't verify — leave as false, don't grant Pro on uncertainty.
           setChecked(true);
           return;
         }
         const pro = data.pro === true;
+        setIsPro(pro);
         if (pro) {
-          setIsPro(true);
-          localStorage.setItem(LS_KEY, "1");
-          document.cookie = "stack_pro=1; path=/; max-age=31536000; samesite=lax";
+          setProCache();
         } else {
-          setIsPro(false);
-          try {
-            localStorage.removeItem(LS_KEY);
-          } catch {
-            /* ignore */
-          }
-          document.cookie = "stack_pro=; path=/; max-age=0; samesite=lax";
+          clearProCache();
         }
         setChecked(true);
       })
-      .catch(() => setChecked(true));
+      .catch(() => {
+        clearProCache();
+        setChecked(true);
+      });
   }, []);
 
   const markPro = useCallback(() => {
     setIsPro(true);
-    localStorage.setItem(LS_KEY, "1");
-    document.cookie = "stack_pro=1; path=/; max-age=31536000; samesite=lax";
+    setProCache();
   }, []);
 
   return { isPro, checked, markPro };

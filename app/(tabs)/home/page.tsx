@@ -558,8 +558,8 @@ export default function HomePage() {
           </Link>
 
           {isPro ? (
-            <span className="flex items-center gap-1.5 border border-slate-600/50 px-3 py-1.5 text-[10px] uppercase tracking-[0.35em] text-slate-400">
-              <Sparkles size={11} strokeWidth={1.5} className="text-slate-400" />
+            <span className="flex items-center gap-1.5 border border-emerald-500/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.35em] text-emerald-400">
+              <Sparkles size={11} strokeWidth={1.5} />
               Pro
             </span>
           ) : (
