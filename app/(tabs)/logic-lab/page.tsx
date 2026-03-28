@@ -68,7 +68,7 @@ export default function LogicLabPage() {
         .select("tier,voice_profile,remind_after_days");
 
       if (fetchError) {
-        setError("Failed to load settings.");
+        setError("Failed to load tier rules.");
         return;
       }
 
@@ -117,7 +117,7 @@ export default function LogicLabPage() {
       );
 
     if (saveError) {
-      setError(`Failed to save ${tierLabels[tier]} settings.`);
+      setError(`Failed to save ${tierLabels[tier]} rules.`);
     } else {
       setSaved((prev) => ({ ...prev, [tier]: true }));
       setTimeout(() => setSaved((prev) => ({ ...prev, [tier]: false })), 2000);
@@ -130,7 +130,7 @@ export default function LogicLabPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-          Settings
+          Tier rules
         </p>
         <h1 className="text-3xl font-semibold tracking-wide">AI & Reminders</h1>
         <p className="text-sm text-[var(--rm-text-muted)]">

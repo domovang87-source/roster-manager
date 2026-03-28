@@ -8,7 +8,7 @@ const navItems = [
   { href: "/home", label: "Home", Icon: Home },
   { href: "/inbox", label: "Log", Icon: ClipboardList },
   { href: "/roster", label: "Roster", Icon: Kanban },
-  { href: "/logic-lab", label: "Settings", Icon: Settings },
+  { href: "/logic-lab", label: "Rules", Icon: Settings },
 ];
 
 export default function BottomNav() {
