@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 export const getSupabaseConfig = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,5 +15,7 @@ export const getSupabaseConfig = () => {
 export const getSupabaseClient = () => {
   const { url, key, urlPresent, keyPresent } = getSupabaseConfig();
   if (!urlPresent || !keyPresent) return null;
-  return createClient(url as string, key as string);
+  // createBrowserClient handles cookie-based sessions so the user's JWT
+  // is sent with every request and Supabase RLS can enforce per-user policies.
+  return createBrowserClient(url as string, key as string);
 };

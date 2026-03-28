@@ -7,6 +7,7 @@ import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
+import { useSession } from "../../../lib/use-session";
 
 const DEFAULT_REMIND_DAYS: Record<string, number> = { A: 7, B: 14, C: 30 };
 
@@ -82,6 +83,7 @@ export default function RosterPage() {
   const [prospectMessages, setProspectMessages] = React.useState<MessageItem[]>([]);
   const [showPaywall, setShowPaywall] = React.useState(false);
   const { isPro } = useProStatus();
+  const { userId } = useSession();
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
 
   React.useEffect(() => {
@@ -280,6 +282,7 @@ export default function RosterPage() {
         name: trimmedName,
         tier: newTier,
         phone_number: newPhone.trim() || null,
+        ...(userId ? { user_id: userId } : {}),
       })
       .select("id,name,tier,vibe_notes,phone_number")
       .single();

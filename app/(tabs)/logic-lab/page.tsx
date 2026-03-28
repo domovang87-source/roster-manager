@@ -2,6 +2,7 @@
 
 import React from "react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
+import { useSession } from "../../../lib/use-session";
 
 type Tier = "A" | "B" | "C";
 
@@ -40,6 +41,7 @@ const voicePlaceholders: Record<Tier, string> = {
 
 export default function LogicLabPage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
+  const { userId } = useSession();
   const [rules, setRules] = React.useState<Record<Tier, RuleForm>>({ ...defaultRules });
   const [saving, setSaving] = React.useState<Record<Tier, boolean>>({ A: false, B: false, C: false });
   const [saved, setSaved] = React.useState<Record<Tier, boolean>>({ A: false, B: false, C: false });
@@ -109,8 +111,9 @@ export default function LogicLabPage() {
           tier,
           voice_profile: rule.voice_profile || null,
           remind_after_days: rule.remind_after_days,
+          ...(userId ? { user_id: userId } : {}),
         },
-        { onConflict: "tier" }
+        { onConflict: userId ? "user_id,tier" : "tier" }
       );
 
     if (saveError) {
