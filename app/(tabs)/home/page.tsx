@@ -525,7 +525,7 @@ export default function HomePage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ plan: "yearly" }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || data.error) {

@@ -10,31 +10,31 @@ type Props = {
 };
 
 export default function PaywallModal({ isOpen, onClose, feature }: Props) {
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState<"monthly" | "yearly" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubscribe = async () => {
-    setLoading(true);
+  const handleSubscribe = async (plan: "monthly" | "yearly") => {
+    setLoading(plan);
     setError(null);
     try {
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ plan }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || data.error) {
         setError(data.error ?? "Failed to start checkout.");
-        setLoading(false);
+        setLoading(null);
         return;
       }
       if (data.url) window.location.href = data.url;
     } catch {
       setError("Failed to start checkout.");
-      setLoading(false);
+      setLoading(null);
     }
   };
 
@@ -50,29 +50,41 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
         </h2>
 
         <p className="mt-2 text-sm text-[var(--rm-text-muted)]">
-          {feature
-            ? `${feature} is a Pro feature.`
-            : "You've hit the free plan limit."}
-          {" "}Unlock unlimited roster members, AI-generated drafts, and more.
+          {feature ? `${feature} is a Pro feature. ` : ""}
+          Unlimited roster members, AI-generated drafts, and more.
         </p>
 
         {error ? (
           <p className="mt-3 text-xs text-rose-400">{error}</p>
         ) : null}
 
+        {/* Yearly — featured */}
         <button
           type="button"
-          onClick={handleSubscribe}
-          disabled={loading}
+          onClick={() => handleSubscribe("yearly")}
+          disabled={loading !== null}
           className="mt-6 w-full rounded-full bg-[var(--rm-text)] px-6 py-3 text-xs font-medium uppercase tracking-[0.3em] text-[var(--rm-bg)] transition hover:opacity-90 disabled:opacity-60"
         >
-          {loading ? "Loading..." : "Subscribe"}
+          {loading === "yearly" ? "Loading..." : "$299 / year"}
+        </button>
+        <p className="mt-1 text-[10px] tracking-[0.1em] text-[var(--rm-text-muted)]">
+          save ~40% vs monthly
+        </p>
+
+        {/* Monthly — secondary */}
+        <button
+          type="button"
+          onClick={() => handleSubscribe("monthly")}
+          disabled={loading !== null}
+          className="mt-4 w-full rounded-full border border-[var(--rm-border)] px-6 py-3 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] hover:text-[var(--rm-text)] disabled:opacity-60"
+        >
+          {loading === "monthly" ? "Loading..." : "$9.99 / month"}
         </button>
 
         <button
           type="button"
           onClick={onClose}
-          className="mt-3 text-xs tracking-[0.1em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
+          className="mt-4 text-xs tracking-[0.1em] text-[var(--rm-text-muted)]/50 transition hover:text-[var(--rm-text-muted)]"
         >
           Maybe later
         </button>
