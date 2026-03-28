@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
-type View = "sign_in" | "sign_up";
+type View = "sign_in" | "sign_up" | "forgot";
 
 export default function LoginPage() {
   const supabase = useMemo(() => {
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const [view, setView] = useState<View>("sign_in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,12 +40,17 @@ export default function LoginPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
+      if (event === "SIGNED_IN" && view !== "forgot") {
         router.push("/home");
       }
     });
     return () => subscription.unsubscribe();
-  }, [supabase, router]);
+  }, [supabase, router, view]);
+
+  const resetFormMessages = () => {
+    setError(null);
+    setSuccessMessage(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,9 +58,45 @@ export default function LoginPage() {
       setError("App is not configured. NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is missing from the environment. Contact the developer.");
       return;
     }
+
+    if (view === "forgot") {
+      if (!email.trim()) {
+        setError("Enter the email for your account.");
+        return;
+      }
+      setLoading(true);
+      resetFormMessages();
+      try {
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "";
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+          email.trim(),
+          {
+            redirectTo: `${origin}/auth/callback?next=/auth/reset-password`,
+          }
+        );
+        if (resetError) {
+          setError(resetError.message);
+          return;
+        }
+        setSuccessMessage(
+          "If an account exists for that email, we sent a reset link. Check your inbox and spam."
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (view === "sign_up") {
+      if (password !== passwordConfirm) {
+        setError("Passwords do not match.");
+        return;
+      }
+    }
+
     setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
+    resetFormMessages();
 
     try {
       if (view === "sign_up") {
@@ -93,13 +135,26 @@ export default function LoginPage() {
     }
   };
 
+  const switchView = (next: View) => {
+    setView(next);
+    setError(null);
+    setSuccessMessage(null);
+    if (next !== "sign_up") setPasswordConfirm("");
+  };
+
+  const primaryLabel =
+    view === "forgot"
+      ? "Send reset link"
+      : view === "sign_in"
+        ? "Sign In"
+        : "Create Account";
+
   return (
     <div
       className="flex min-h-screen flex-col items-center justify-center px-6"
       style={{ background: "#0b0e11" }}
     >
       <div className="w-full max-w-sm">
-        {/* Title */}
         <div
           className={`text-center transition-all duration-[1200ms] ease-out ${
             step >= 1 ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
@@ -108,18 +163,16 @@ export default function LoginPage() {
           <h1 className="text-5xl font-light tracking-[0.5em]">STACK</h1>
         </div>
 
-        {/* Tagline */}
         <div
           className={`mt-4 text-center transition-all duration-[900ms] ease-out ${
             step >= 2 ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
           }`}
         >
           <p className="font-light italic tracking-[0.15em] text-[#a8adb8]">
-            Your circle, curated.
+            {view === "forgot" ? "Reset your password" : "Your circle, curated."}
           </p>
         </div>
 
-        {/* Form */}
         <form
           onSubmit={handleSubmit}
           className={`mt-12 space-y-5 transition-all duration-[900ms] ease-out ${
@@ -133,7 +186,7 @@ export default function LoginPage() {
             <input
               type="email"
               value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(null); }}
+              onChange={(e) => { setEmail(e.target.value); resetFormMessages(); }}
               required
               autoComplete="email"
               placeholder="you@example.com"
@@ -141,35 +194,69 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-[0.3em] text-[#a8adb8]">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(null); }}
-                required
-                autoComplete={view === "sign_up" ? "new-password" : "current-password"}
-                placeholder="••••••••"
-                minLength={6}
-                className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 pr-12 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                tabIndex={-1}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a8adb8] transition hover:text-[#fafafa]"
-              >
-                {showPassword ? (
-                  <EyeOff size={16} strokeWidth={1.25} />
-                ) : (
-                  <Eye size={16} strokeWidth={1.25} />
-                )}
-              </button>
-            </div>
-          </div>
+          {view !== "forgot" ? (
+            <>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase tracking-[0.3em] text-[#a8adb8]">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); resetFormMessages(); }}
+                    required
+                    autoComplete={view === "sign_up" ? "new-password" : "current-password"}
+                    placeholder="••••••••"
+                    minLength={6}
+                    className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 pr-12 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a8adb8] transition hover:text-[#fafafa]"
+                  >
+                    {showPassword ? (
+                      <EyeOff size={16} strokeWidth={1.25} />
+                    ) : (
+                      <Eye size={16} strokeWidth={1.25} />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {view === "sign_up" ? (
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-[0.3em] text-[#a8adb8]">
+                    Confirm password
+                  </label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={passwordConfirm}
+                    onChange={(e) => { setPasswordConfirm(e.target.value); resetFormMessages(); }}
+                    required
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    minLength={6}
+                    className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
+                  />
+                </div>
+              ) : null}
+
+              {view === "sign_in" ? (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => switchView("forgot")}
+                    className="text-[11px] tracking-[0.08em] text-[#555a66] transition hover:text-[#a8adb8]"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
 
           {error ? (
             <p className="text-xs text-rose-400">{error}</p>
@@ -183,33 +270,34 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full rounded-full bg-[#fafafa] px-6 py-3 text-xs font-medium uppercase tracking-[0.3em] text-[#0b0e11] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading
-              ? "Hold on..."
-              : view === "sign_in"
-                ? "Sign In"
-                : "Create Account"}
+            {loading ? "Hold on..." : primaryLabel}
           </button>
         </form>
 
-        {/* Bottom link */}
         <div
           className={`mt-16 text-center transition-all duration-700 ease-out ${
             step >= 3 ? "opacity-100" : "opacity-0"
           }`}
         >
-          <button
-            type="button"
-            onClick={() => {
-              setView(view === "sign_in" ? "sign_up" : "sign_in");
-              setError(null);
-              setSuccessMessage(null);
-            }}
-            className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
-          >
-            {view === "sign_in"
-              ? "Create an account"
-              : "Already have an account? Sign in"}
-          </button>
+          {view === "forgot" ? (
+            <button
+              type="button"
+              onClick={() => switchView("sign_in")}
+              className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
+            >
+              Back to sign in
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => switchView(view === "sign_in" ? "sign_up" : "sign_in")}
+              className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
+            >
+              {view === "sign_in"
+                ? "Create an account"
+                : "Already have an account? Sign in"}
+            </button>
+          )}
         </div>
       </div>
     </div>
