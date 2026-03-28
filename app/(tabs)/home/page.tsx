@@ -774,7 +774,7 @@ export default function HomePage() {
                         </div>
 
                         {prospect.lastInboundBody ? (
-                          <p className="mt-2 text-xs text-slate-500">
+                          <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
                             &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
                           </p>
                         ) : null}
@@ -794,15 +794,15 @@ export default function HomePage() {
                               <textarea
                                 value={currentDraft}
                                 onChange={(e) => setDraftEdits((prev) => ({ ...prev, [draftId]: e.target.value }))}
-                                rows={3}
-                                className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-xs text-[var(--rm-text)]"
+                                rows={4}
+                                className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3 text-[0.919rem] leading-relaxed text-[var(--rm-text)]"
                               />
                             ) : (
-                              <p className="mt-2 text-sm leading-snug text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
-                                {currentDraft}
+                              <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
+                                <span className="text-[1.05em]">{currentDraft}</span>
                               </p>
                             )}
-                            <div className="mt-3 flex items-center gap-1.5 sm:mt-4 sm:gap-2">
+                            <div className="mt-3 flex flex-col gap-3 sm:mt-4 sm:flex-row sm:items-center sm:gap-2">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -813,22 +813,22 @@ export default function HomePage() {
                                       : `sms:?body=${body}`;
                                   window.location.href = urlH;
                                 }}
-                                className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/20 px-3.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/35 sm:gap-2 sm:px-5 sm:py-2 sm:tracking-[0.28em]"
+                                className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/30 py-3 text-[10px] font-medium uppercase tracking-[0.24em] text-[var(--rm-text)] transition hover:border-slate-500 hover:bg-slate-900/40 sm:w-auto sm:justify-start sm:rounded-full sm:px-5 sm:py-2 sm:tracking-[0.28em]"
                               >
                                 <MessageSquare size={14} strokeWidth={1.25} className="opacity-90" />
                                 TEXT
                               </button>
-                              <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                              <div className="flex items-center justify-center gap-2 border-t border-slate-800/60 pt-3 sm:ml-auto sm:border-0 sm:pt-0 sm:gap-0.5">
                                 <button
                                   type="button"
                                   onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
                                   disabled={isGenerating === prospect.id}
-                                  className="rounded-full p-2 text-slate-500/35 transition hover:bg-slate-800/35 hover:text-slate-400 disabled:pointer-events-none disabled:opacity-30"
+                                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/35 hover:text-slate-400 disabled:pointer-events-none disabled:opacity-30 sm:h-9 sm:w-9"
                                   title="Try another version"
                                   aria-label="Regenerate draft"
                                 >
                                   <RefreshCw
-                                    size={16}
+                                    size={17}
                                     strokeWidth={1.35}
                                     className={isGenerating === prospect.id ? "animate-spin" : ""}
                                   />
@@ -836,38 +836,38 @@ export default function HomePage() {
                                 <button
                                   type="button"
                                   onClick={() => shareDraftText(currentDraft, prospect.name)}
-                                  className="rounded-full p-2 text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300"
+                                  className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
                                   title="Share draft"
                                   aria-label="Share draft"
                                 >
-                                  <Share size={17} strokeWidth={1.2} />
+                                  <Share size={18} strokeWidth={1.2} />
                                 </button>
                                 {isEditing ? (
                                   <button
                                     type="button"
                                     onClick={() => handleSaveDraft(draftId)}
-                                    className="rounded-full p-2 text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300"
+                                    className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
                                     title="Save draft"
                                     aria-label="Save draft"
                                   >
-                                    <Save size={17} strokeWidth={1.2} />
+                                    <Save size={18} strokeWidth={1.2} />
                                   </button>
                                 ) : (
                                   <button
                                     type="button"
                                     onClick={() => setEditingDraftId(draftId)}
-                                    className="rounded-full p-2 text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300"
+                                    className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
                                     title="Edit draft"
                                     aria-label="Edit draft"
                                   >
-                                    <Edit2 size={17} strokeWidth={1.2} />
+                                    <Edit2 size={18} strokeWidth={1.2} />
                                   </button>
                                 )}
                               </div>
                             </div>
                           </>
                         ) : (
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                             <button
                               type="button"
                               onClick={() => handleDismissCard(prospect)}
@@ -881,7 +881,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={() => { setPaywallFeature("AI drafts"); setShowPaywall(true); }}
-                                className="relative flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]/50 transition hover:border-emerald-500/40 hover:text-emerald-400"
+                                className="relative flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--rm-border)] py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]/50 transition hover:border-emerald-500/40 hover:text-emerald-400 sm:w-auto sm:justify-start sm:rounded-none sm:px-3 sm:py-1"
                               >
                                 <Lock size={11} strokeWidth={1.5} />
                                 Generate Draft
@@ -892,7 +892,7 @@ export default function HomePage() {
                                 type="button"
                                 onClick={() => handleGenerateDraft(prospect)}
                                 disabled={generatingNoDraft}
-                                className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60"
+                                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-[var(--rm-border)] py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-60 sm:w-auto sm:rounded-none sm:px-3 sm:py-1"
                               >
                                 {generatingNoDraft ? "Generating..." : "Generate Draft"}
                               </button>
@@ -901,7 +901,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
-                                className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)]"
+                                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/20 py-2.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text)] transition hover:border-slate-500 sm:w-auto sm:rounded-none sm:border-[var(--rm-border)] sm:bg-transparent sm:px-3 sm:py-1"
                               >
                                 <MessageSquare size={14} strokeWidth={1.25} />
                                 Text
