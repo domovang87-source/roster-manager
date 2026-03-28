@@ -17,8 +17,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
 
-// Stripe requires the raw body to verify the webhook signature
-export const config = { api: { bodyParser: false } };
+// App Router: use req.text() so Stripe gets the raw body (no Pages Router bodyParser config).
 
 export async function POST(req: Request) {
   if (!stripe) {
