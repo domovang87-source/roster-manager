@@ -7,6 +7,29 @@ import { Eye, EyeOff } from "lucide-react";
 
 type View = "sign_in" | "sign_up" | "forgot";
 
+function isEmailNotConfirmed(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  const msg = (err.message ?? "").toLowerCase();
+  const code = (err as { code?: string }).code ?? "";
+  return (
+    code === "email_not_confirmed" ||
+    msg.includes("email not confirmed") ||
+    msg.includes("not confirmed")
+  );
+}
+
+function isAlreadyRegistered(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  const msg = (err.message ?? "").toLowerCase();
+  const code = (err as { code?: string }).code ?? "";
+  return (
+    code === "user_already_exists" ||
+    msg.includes("already registered") ||
+    msg.includes("already exists") ||
+    msg.includes("user already")
+  );
+}
+
 export default function LoginPage() {
   const supabase = useMemo(() => {
     try {
@@ -26,6 +49,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showResendConfirmation, setShowResendConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [step, setStep] = useState(0);
 
   useEffect(() => {
@@ -50,6 +75,38 @@ export default function LoginPage() {
   const resetFormMessages = () => {
     setError(null);
     setSuccessMessage(null);
+    setShowResendConfirmation(false);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!supabase || !email.trim()) {
+      setError("Enter your email above first.");
+      return;
+    }
+    setResendLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${origin}/auth/callback`,
+        },
+      });
+      if (resendError) {
+        setError(resendError.message);
+        return;
+      }
+      setSuccessMessage(
+        "Confirmation email sent. Check inbox and spam, then open the link before signing in."
+      );
+      setShowResendConfirmation(false);
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -111,7 +168,14 @@ export default function LoginPage() {
           },
         });
         if (signUpError) {
-          setError(signUpError.message);
+          if (isAlreadyRegistered(signUpError)) {
+            setError(
+              "This email already has an account. Sign in with your password below — or resend a confirmation email if you never verified."
+            );
+            setShowResendConfirmation(true);
+          } else {
+            setError(signUpError.message);
+          }
           return;
         }
         if (data.session) {
@@ -125,7 +189,14 @@ export default function LoginPage() {
         const { error: signInError } =
           await supabase.auth.signInWithPassword({ email, password });
         if (signInError) {
-          setError(signInError.message);
+          if (isEmailNotConfirmed(signInError)) {
+            setError(
+              "Confirm your email before signing in. Check spam for the original link, or send a new one below."
+            );
+            setShowResendConfirmation(true);
+          } else {
+            setError(signInError.message);
+          }
           return;
         }
         router.push("/home");
@@ -139,6 +210,7 @@ export default function LoginPage() {
     setView(next);
     setError(null);
     setSuccessMessage(null);
+    if (next === "forgot") setShowResendConfirmation(false);
     if (next !== "sign_up") setPasswordConfirm("");
   };
 
@@ -263,6 +335,17 @@ export default function LoginPage() {
           ) : null}
           {successMessage ? (
             <p className="text-xs text-emerald-400/90">{successMessage}</p>
+          ) : null}
+
+          {showResendConfirmation && view !== "forgot" ? (
+            <button
+              type="button"
+              onClick={handleResendConfirmation}
+              disabled={resendLoading || !email.trim()}
+              className="w-full border border-[#2a2e36] py-2.5 text-[11px] uppercase tracking-[0.2em] text-[#a8adb8] transition hover:border-[#fafafa] hover:text-[#fafafa] disabled:opacity-50"
+            >
+              {resendLoading ? "Sending…" : "Resend confirmation email"}
+            </button>
           ) : null}
 
           <button
