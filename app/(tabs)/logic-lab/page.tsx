@@ -203,6 +203,18 @@ export default function LogicLabPage() {
           </div>
         ))}
       </div>
+
+      {/* Account — buried at the bottom, as requested */}
+      <div className="pt-6">
+        <a
+          href="https://billing.stripe.com/p/login/28E14n6m6gld4nobbM2ZO00"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[10px] tracking-[0.15em] text-[var(--rm-text-muted)]/30 transition hover:text-[var(--rm-text-muted)]/60"
+        >
+          manage subscription
+        </a>
+      </div>
     </div>
   );
 }
