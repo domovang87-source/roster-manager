@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Check, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, ThumbsUp, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -471,7 +471,6 @@ export default function HomePage() {
     if (!client) return;
     setQuickTouchingId(prospect.id);
     setError(null);
-    const createdAt = new Date().toISOString();
     const insertPayload: Record<string, unknown> = {
       prospect_id: prospect.id,
       direction: "outbound",
@@ -494,40 +493,55 @@ export default function HomePage() {
     }
 
     const dismissKey = prospect.draftId || prospect.id;
-    setDismissedDrafts((prev) => [
-      {
-        id: dismissKey,
-        prospectId: prospect.id,
-        prospectName: prospect.name,
-        tier: prospect.tier,
-        text: draftSummary ?? prospect.draftText,
-        draftId: prospect.draftId,
-        dismissedAt: createdAt,
-      },
-      ...prev.filter((d) => d.id !== dismissKey),
-    ]);
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([12, 45, 12]);
+    }
 
-    if (prospect.draftId) {
-      try {
-        const res = await fetch("/api/dismiss-draft", {
+    setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: true }));
+
+    window.setTimeout(() => {
+      const dismissedAt = new Date().toISOString();
+      setDismissedDrafts((prev) => [
+        {
+          id: dismissKey,
+          prospectId: prospect.id,
+          prospectName: prospect.name,
+          tier: prospect.tier,
+          text: draftSummary ?? prospect.draftText,
+          draftId: prospect.draftId,
+          dismissedAt,
+        },
+        ...prev.filter((d) => d.id !== dismissKey),
+      ]);
+
+      if (prospect.draftId) {
+        void fetch("/api/dismiss-draft", {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ draft_id: prospect.draftId }),
-        });
-        if (!res.ok) {
-          setError("Logged touch, but could not sync hidden draft to the server.");
-        }
-      } catch {
-        setError("Logged touch, but could not sync hidden draft to the server.");
+        })
+          .then((res) => {
+            if (!res.ok) {
+              setError("Logged touch, but could not sync hidden draft to the server.");
+            }
+          })
+          .catch(() => {
+            setError("Logged touch, but could not sync hidden draft to the server.");
+          });
       }
-    }
 
-    setActivityCount((c) => c + 1);
-    setQuickTouchingId(null);
-    setTouchBaseToast(`${prospect.name} moved to Recent.`);
-    window.setTimeout(() => setTouchBaseToast(null), 1000);
-    await refetchNarrative();
+      setActivityCount((c) => c + 1);
+      setQuickTouchingId(null);
+      setDismissingDraftIds((prev) => {
+        const next = { ...prev };
+        delete next[dismissKey];
+        return next;
+      });
+      setTouchBaseToast("Interaction Logged.");
+      window.setTimeout(() => setTouchBaseToast(null), 1000);
+      void refetchNarrative();
+    }, 300);
   };
 
   const handleGenerateDraft = async (
@@ -838,8 +852,8 @@ export default function HomePage() {
                     return (
                       <div
                         key={prospect.id}
-                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-200 sm:p-5 ${
-                          dismissingDraftIds[dismissKey] ? "opacity-0" : "opacity-100"
+                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-300 ease-out sm:p-5 ${
+                          dismissingDraftIds[dismissKey] ? "pointer-events-none opacity-0" : "opacity-100"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -917,14 +931,14 @@ export default function HomePage() {
                                     type="button"
                                     onClick={() => handleTouchedBase(prospect, currentDraft)}
                                     disabled={quickTouchingId === prospect.id}
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
-                                    title="Touched base — log & hide card"
-                                    aria-label="Touched base"
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 active:scale-95 disabled:pointer-events-none disabled:opacity-30"
+                                    title="Log chat — touched base & hide card"
+                                    aria-label="Log chat"
                                   >
                                     {quickTouchingId === prospect.id ? (
                                       <RefreshCw size={14} strokeWidth={1.35} className="animate-spin" />
                                     ) : (
-                                      <Check size={15} strokeWidth={1.35} />
+                                      <ThumbsUp size={15} strokeWidth={1.2} />
                                     )}
                                   </button>
                                   <button
@@ -992,14 +1006,19 @@ export default function HomePage() {
                                 type="button"
                                 onClick={() => handleTouchedBase(prospect)}
                                 disabled={quickTouchingId === prospect.id}
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-600/40 text-slate-500 transition hover:border-slate-500/60 hover:bg-slate-900/35 hover:text-slate-300 disabled:opacity-35"
-                                title="Touched base — log & hide"
-                                aria-label="Touched base"
+                                className="inline-flex items-center gap-1 rounded-full border border-slate-600/45 bg-slate-950/20 py-1 pl-1.5 pr-2 text-slate-500 transition hover:border-slate-500/55 hover:bg-slate-900/35 hover:text-slate-300 active:scale-[0.98] disabled:opacity-35"
+                                title="Log chat — touched base & hide card"
+                                aria-label="Log chat"
                               >
                                 {quickTouchingId === prospect.id ? (
                                   <RefreshCw size={12} className="animate-spin" strokeWidth={1.35} />
                                 ) : (
-                                  <Check size={13} strokeWidth={1.35} />
+                                  <>
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/40 bg-slate-900/50">
+                                      <ThumbsUp size={12} strokeWidth={1.2} />
+                                    </span>
+                                    <span className="text-[8px] font-medium uppercase tracking-[0.2em]">LOG CHAT</span>
+                                  </>
                                 )}
                               </button>
                               {!prospect.lastInboundBody && prospect.phoneNumber ? (
