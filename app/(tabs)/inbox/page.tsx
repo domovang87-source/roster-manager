@@ -445,7 +445,7 @@ export default function ActivityLogPage() {
       {/* Manual Log Modal */}
       {isLogOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="w-full max-w-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+          <div className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 pb-8">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Log Activity</h2>
               <button type="button" onClick={() => setIsLogOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>
@@ -506,7 +506,7 @@ export default function ActivityLogPage() {
       {/* Screenshot Upload Modal */}
       {isScreenshotOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+          <div className="max-h-[calc(100vh-6rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 pb-8">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Upload Screenshot</h2>
               <button type="button" onClick={resetScreenshotModal} className="text-[var(--rm-text-muted)]">

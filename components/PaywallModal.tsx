@@ -14,6 +14,15 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Reset loading when user presses back from Stripe (bfcache restore)
+  React.useEffect(() => {
+    const reset = (e: PageTransitionEvent) => {
+      if (e.persisted) setLoading(false);
+    };
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+
   if (!isOpen) return null;
 
   const handleSubscribe = async () => {
