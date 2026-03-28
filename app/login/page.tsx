@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [step, setStep] = useState(0);
 
   useEffect(() => {
@@ -53,29 +54,42 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
-    if (view === "sign_up") {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/auth/callback`
-              : undefined,
-        },
-      });
-      if (signUpError) {
-        setError(signUpError.message);
-        setLoading(false);
+    try {
+      if (view === "sign_up") {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo:
+              typeof window !== "undefined"
+                ? `${window.location.origin}/auth/callback`
+                : undefined,
+          },
+        });
+        if (signUpError) {
+          setError(signUpError.message);
+          return;
+        }
+        if (data.session) {
+          router.push("/home");
+        } else {
+          setSuccessMessage(
+            "Check your email for a confirmation link, then sign in. If you don't see it, check spam."
+          );
+        }
+      } else {
+        const { error: signInError } =
+          await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) {
+          setError(signInError.message);
+          return;
+        }
+        router.push("/home");
       }
-    } else {
-      const { error: signInError } =
-        await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) {
-        setError(signInError.message);
-        setLoading(false);
-      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -160,6 +174,9 @@ export default function LoginPage() {
           {error ? (
             <p className="text-xs text-rose-400">{error}</p>
           ) : null}
+          {successMessage ? (
+            <p className="text-xs text-emerald-400/90">{successMessage}</p>
+          ) : null}
 
           <button
             type="submit"
@@ -185,6 +202,7 @@ export default function LoginPage() {
             onClick={() => {
               setView(view === "sign_in" ? "sign_up" : "sign_in");
               setError(null);
+              setSuccessMessage(null);
             }}
             className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
           >
