@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Edit2, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Save, Share, Sparkles, UserPlus, X } from "lucide-react";
+import { CircleCheck, ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, UserPlus, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -52,8 +52,8 @@ export default function HomePage() {
   const [tierProspects, setTierProspects] = React.useState<Record<Tier, TierProspect[]>>({ A: [], B: [], C: [] });
   const [rosterCount, setRosterCount] = React.useState(0);
   const [activityCount, setActivityCount] = React.useState(0);
-  const [editingDraftId, setEditingDraftId] = React.useState<string | null>(null);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
+  const [shareTip, setShareTip] = React.useState<{ prospectId: string; message: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [isGenerating, setIsGenerating] = React.useState<string | null>(null);
   const [showPaywall, setShowPaywall] = React.useState(false);
@@ -64,6 +64,8 @@ export default function HomePage() {
   const [undoToast, setUndoToast] = React.useState<UndoToast | null>(null);
   const [dismissedDrafts, setDismissedDrafts] = React.useState<DismissedDraft[]>([]);
   const [dismissedOpen, setDismissedOpen] = React.useState(false);
+  const [quickTouchingId, setQuickTouchingId] = React.useState<string | null>(null);
+  const messagesEventTypeRef = React.useRef(true);
   const { isPro, markPro } = useProStatus();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -93,22 +95,30 @@ export default function HomePage() {
       });
   }, [searchParams, router, markPro]);
 
-  const shareDraftText = async (text: string, prospectName: string) => {
+  const shareDraftText = async (text: string, prospectName: string, prospectId: string) => {
+    setShareTip(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setShareTip({
+        prospectId,
+        message: "Copied — open Instagram (or any app) and paste in a DM.",
+      });
+      window.setTimeout(() => {
+        setShareTip((prev) => (prev?.prospectId === prospectId ? null : prev));
+      }, 4000);
+    } catch {
+      setError("Could not copy this draft to the clipboard.");
+      return;
+    }
     try {
       if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
         await navigator.share({
           text,
           title: `Draft for ${prospectName}`,
         });
-        return;
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      setError("Could not share or copy this draft.");
     }
   };
 
@@ -306,6 +316,26 @@ export default function HomePage() {
     }
   };
 
+  const refetchNarrative = React.useCallback(async () => {
+    setLoadingNarrative(true);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch("/api/daily-narrative", {
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = (await res.json()) as { synopsis?: string };
+      setSynopsis(data.synopsis ?? "No activity to summarize yet.");
+    } catch {
+      setSynopsis("No activity to summarize yet.");
+    } finally {
+      setLoadingNarrative(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     const config = getSupabaseConfig();
     const client = getSupabaseClient();
@@ -319,25 +349,6 @@ export default function HomePage() {
       setError(`Supabase is not configured (${missingParts} missing). Add env vars to .env.local and restart the dev server.`);
       return;
     }
-
-    const loadNarrative = async () => {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
-        const res = await fetch("/api/daily-narrative", {
-          cache: "no-store",
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        const data = (await res.json()) as { synopsis?: string };
-        setSynopsis(data.synopsis ?? "No activity to summarize yet.");
-      } catch {
-        setSynopsis("No activity to summarize yet.");
-      } finally {
-        setLoadingNarrative(false);
-      }
-    };
 
     const loadTierProspects = async () => {
       const [prospectsRes, messagesRes, draftsRes, dismissedRes] = await Promise.all([
@@ -438,20 +449,48 @@ export default function HomePage() {
       setDraftsEverGenerated(count ?? 0);
     };
 
-    loadNarrative();
+    void refetchNarrative();
     loadTierProspects();
     loadActivityCount();
     loadDraftsGenerated();
-  }, []);
+  }, [refetchNarrative]);
 
-  const handleSaveDraft = async (draftId: string) => {
+  const handleQuickTouch = async (prospect: TierProspect) => {
     const client = supabaseRef.current;
     if (!client) return;
-    const text = draftEdits[draftId]?.trim();
-    if (!text) return;
-    const { error: updateError } = await client.from("scheduled_replies").update({ draft_text: text }).eq("id", draftId);
-    if (updateError) { setError("Failed to update draft."); return; }
-    setEditingDraftId(null);
+    setQuickTouchingId(prospect.id);
+    setError(null);
+    const createdAt = new Date().toISOString();
+    const insertPayload: Record<string, unknown> = {
+      prospect_id: prospect.id,
+      direction: "outbound",
+      body: "Touched base",
+    };
+    if (messagesEventTypeRef.current) insertPayload.event_type = "note";
+
+    let { error: insertError } = await client.from("messages").insert(insertPayload);
+    if (insertError?.message?.includes("event_type")) {
+      messagesEventTypeRef.current = false;
+      delete insertPayload.event_type;
+      const retry = await client.from("messages").insert(insertPayload);
+      insertError = retry.error;
+    }
+
+    if (insertError) {
+      setError(insertError.message);
+      setQuickTouchingId(null);
+      return;
+    }
+
+    setTierProspects((prev) => ({
+      ...prev,
+      [prospect.tier]: prev[prospect.tier].map((p) =>
+        p.id === prospect.id ? { ...p, lastActivityAt: createdAt } : p
+      ),
+    }));
+    setActivityCount((c) => c + 1);
+    setQuickTouchingId(null);
+    await refetchNarrative();
   };
 
   const handleGenerateDraft = async (
@@ -505,7 +544,6 @@ export default function HomePage() {
         }
         const id = String(updated.id);
         const text = String(updated.draft_text ?? "");
-        setEditingDraftId(null);
         setTierProspects((prev) => {
           const next = { ...prev };
           next[prospect.tier] = next[prospect.tier].map((p) =>
@@ -751,7 +789,6 @@ export default function HomePage() {
                   {visibleProspects.map((prospect) => {
                     const draftId = prospect.draftId;
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
-                    const isEditing = editingDraftId === draftId;
                     const generatingNoDraft = isGenerating === prospect.id;
                     const dismissKey = draftId || prospect.id;
 
@@ -762,14 +799,32 @@ export default function HomePage() {
                           dismissingDraftIds[dismissKey] ? "opacity-0" : "opacity-100"
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">{prospect.name}</p>
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
+                          <div className="flex shrink-0 items-center gap-1">
                             {prospect.lastActivityAt ? (
                               <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
                                 {formatRelativeTime(prospect.lastActivityAt)}
                               </span>
-                            ) : null}
+                            ) : (
+                              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
+                                —
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleQuickTouch(prospect)}
+                              disabled={quickTouchingId === prospect.id}
+                              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500/35 transition hover:bg-slate-800/40 hover:text-emerald-400/80 disabled:pointer-events-none disabled:opacity-25"
+                              title="Touched base — logs a note and refreshes the AI summary"
+                              aria-label="Log that you touched base; updates activity and AI summary"
+                            >
+                              <CircleCheck
+                                size={16}
+                                strokeWidth={1.35}
+                                className={quickTouchingId === prospect.id ? "animate-pulse" : ""}
+                              />
+                            </button>
                           </div>
                         </div>
 
@@ -790,18 +845,9 @@ export default function HomePage() {
                             >
                               <X size={14} strokeWidth={1.5} />
                             </button>
-                            {isEditing ? (
-                              <textarea
-                                value={currentDraft}
-                                onChange={(e) => setDraftEdits((prev) => ({ ...prev, [draftId]: e.target.value }))}
-                                rows={4}
-                                className="mt-2 w-full border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3 text-[0.919rem] leading-relaxed text-[var(--rm-text)]"
-                              />
-                            ) : (
-                              <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
-                                <span className="text-[1.05em]">{currentDraft}</span>
-                              </p>
-                            )}
+                            <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)] sm:mt-3 sm:leading-normal">
+                              <span className="text-[1.05em]">{currentDraft}</span>
+                            </p>
                             <div className="mt-3 flex flex-col gap-3 sm:mt-4 sm:flex-row sm:items-center sm:gap-2">
                               <button
                                 type="button"
@@ -835,35 +881,19 @@ export default function HomePage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => shareDraftText(currentDraft, prospect.name)}
+                                  onClick={() => shareDraftText(currentDraft, prospect.name, prospect.id)}
                                   className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
-                                  title="Share draft"
-                                  aria-label="Share draft"
+                                  title="Copy & share — paste into Instagram DMs or any app"
+                                  aria-label="Copy draft to clipboard and open share sheet"
                                 >
                                   <Share size={18} strokeWidth={1.2} />
                                 </button>
-                                {isEditing ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveDraft(draftId)}
-                                    className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
-                                    title="Save draft"
-                                    aria-label="Save draft"
-                                  >
-                                    <Save size={18} strokeWidth={1.2} />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingDraftId(draftId)}
-                                    className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500/70 transition hover:bg-slate-800/40 hover:text-slate-300 sm:h-9 sm:w-9"
-                                    title="Edit draft"
-                                    aria-label="Edit draft"
-                                  >
-                                    <Edit2 size={18} strokeWidth={1.2} />
-                                  </button>
-                                )}
                               </div>
+                            {shareTip?.prospectId === prospect.id ? (
+                              <p className="mt-2 text-center text-[10px] leading-snug text-emerald-400/90 sm:text-left">
+                                {shareTip.message}
+                              </p>
+                            ) : null}
                             </div>
                           </>
                         ) : (
