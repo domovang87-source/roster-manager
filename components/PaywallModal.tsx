@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X } from "lucide-react";
+import { X, Check } from "lucide-react";
 
 type Props = {
   isOpen: boolean;
@@ -9,12 +9,18 @@ type Props = {
   feature?: string;
 };
 
+const PERKS = [
+  "Unlimited roster members",
+  "AI drafts in your voice",
+  "Never ghost — smart reminders",
+  "Tier your circle A / B / C",
+];
+
 export default function PaywallModal({ isOpen, onClose, feature }: Props) {
   const [plan, setPlan] = React.useState<"yearly" | "monthly">("yearly");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Reset loading when user presses back from Stripe (bfcache restore)
   React.useEffect(() => {
     const reset = (e: PageTransitionEvent) => {
       if (e.persisted) setLoading(false);
@@ -50,9 +56,9 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 px-6">
-      <div className="relative w-full max-w-sm border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-8 text-center">
+      <div className="relative w-full max-w-sm border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-7">
 
-        {/* Subtle close */}
+        {/* Close */}
         <button
           type="button"
           onClick={onClose}
@@ -61,52 +67,81 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
           <X size={14} strokeWidth={1.5} />
         </button>
 
-        <h2 className="text-lg font-semibold tracking-wide">Upgrade to STACK Pro</h2>
-
-        <p className="mt-2 text-sm text-[var(--rm-text-muted)]">
-          {feature ? `${feature} is a Pro feature. ` : ""}
-          Unlimited roster, AI drafts, and more.
+        {/* Header */}
+        <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">
+          {feature ? `${feature} · Pro only` : "STACK Pro"}
         </p>
+        <h2 className="mt-1.5 text-xl font-semibold leading-snug tracking-tight">
+          Your second brain<br />for dating.
+        </h2>
 
-        {/* Price */}
-        <div className="mt-6">
-          <div className="flex items-baseline justify-center gap-1.5">
-            <span className="text-4xl font-semibold tracking-tight">
-              {plan === "yearly" ? "$250" : "$29"}
-            </span>
-            <span className="text-sm text-[var(--rm-text-muted)]">
-              {plan === "yearly" ? "/ yr" : "/ mo"}
-            </span>
-            {plan === "yearly" && (
-              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.15em] text-emerald-400">
-                Save 28%
-              </span>
-            )}
+        {/* Perks */}
+        <ul className="mt-4 space-y-2">
+          {PERKS.map((perk) => (
+            <li key={perk} className="flex items-center gap-2.5 text-sm text-[var(--rm-text-muted)]">
+              <Check size={13} strokeWidth={2} className="shrink-0 text-emerald-400" />
+              {perk}
+            </li>
+          ))}
+        </ul>
+
+        {/* Divider */}
+        <div className="my-5 border-t border-[var(--rm-border)]" />
+
+        {/* Plan toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-base font-semibold">
+              {plan === "yearly" ? "$250 / year" : "$29 / month"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">
+              {plan === "yearly" ? "$20.83 / mo · billed annually" : "cancel anytime"}
+            </p>
           </div>
-          {plan === "yearly" && (
-            <p className="mt-1 text-[11px] text-[var(--rm-text-muted)]">$20.83 / mo · billed annually</p>
-          )}
+
+          {/* Pill toggle */}
+          <div className="flex items-center rounded-full border border-[var(--rm-border)] p-0.5 text-[10px] uppercase tracking-[0.15em]">
+            <button
+              type="button"
+              onClick={() => setPlan("yearly")}
+              className={`rounded-full px-3 py-1 transition ${
+                plan === "yearly"
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "text-[var(--rm-text-muted)] hover:text-[var(--rm-text)]"
+              }`}
+            >
+              Yearly
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlan("monthly")}
+              className={`rounded-full px-3 py-1 transition ${
+                plan === "monthly"
+                  ? "bg-[var(--rm-text)]/10 text-[var(--rm-text)]"
+                  : "text-[var(--rm-text-muted)] hover:text-[var(--rm-text)]"
+              }`}
+            >
+              Monthly
+            </button>
+          </div>
         </div>
+
+        {plan === "yearly" && (
+          <p className="mt-1.5 text-[10px] text-emerald-400/80 tracking-[0.1em] uppercase">
+            ✦ save 28% vs monthly
+          </p>
+        )}
 
         {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
 
-        {/* Primary CTA */}
+        {/* CTA */}
         <button
           type="button"
           onClick={handleSubscribe}
           disabled={loading}
           className="mt-5 w-full rounded-full bg-[var(--rm-text)] px-6 py-3 text-xs font-medium uppercase tracking-[0.3em] text-[var(--rm-bg)] transition hover:opacity-90 disabled:opacity-60"
         >
-          {loading ? "Loading..." : "Subscribe"}
-        </button>
-
-        {/* Monthly toggle — tiny & subtle */}
-        <button
-          type="button"
-          onClick={() => setPlan(plan === "yearly" ? "monthly" : "yearly")}
-          className="mt-3 text-[11px] text-[var(--rm-text-muted)]/40 transition hover:text-[var(--rm-text-muted)]/70"
-        >
-          {plan === "yearly" ? "or $29 / month" : "or $250 / year (save 28%)"}
+          {loading ? "Loading..." : "Get Pro"}
         </button>
 
       </div>
