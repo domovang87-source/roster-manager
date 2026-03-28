@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 type Tier = "A" | "B" | "C";
 
@@ -10,14 +11,6 @@ type RequestBody = {
   vibeNotes?: string;
   incomingText: string;
   prospectId?: string;
-};
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const getSupabaseServerClient = () => {
-  if (!supabaseUrl || !supabaseAnonKey) return null;
-  return createClient(supabaseUrl, supabaseAnonKey);
 };
 
 const getOpenAIClient = () => {
@@ -38,6 +31,9 @@ function timeAgo(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 0) {
+    return d.toLocaleDateString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
   const min = Math.floor(diffMs / 60_000);
   const hrs = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);
@@ -93,11 +89,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const supabase = getSupabaseServerClient();
-  if (!supabase) {
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
+  try {
+    supabase = await createServerSupabase();
+  } catch {
     return NextResponse.json(
       { error: "Supabase is not configured." },
-      { status: 400 }
+      { status: 500 }
     );
   }
 

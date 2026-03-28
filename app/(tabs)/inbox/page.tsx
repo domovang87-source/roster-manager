@@ -3,6 +3,10 @@
 import React from "react";
 import { MessageSquare, Heart, Phone, Users, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
+import {
+  parseDatetimeLocalToUtcIso,
+  toLocalDatetimeInputValue,
+} from "../../../lib/datetime-local";
 
 type EventType = "text" | "date" | "hangout" | "call" | "note";
 
@@ -32,11 +36,6 @@ function isReactionBody(body: string): boolean {
   return body.trim().toLowerCase().startsWith("reacted ");
 }
 
-function toLocalDatetimeString(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function ActivityLogPage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -51,7 +50,7 @@ export default function ActivityLogPage() {
   const [selectedProspectId, setSelectedProspectId] = React.useState("");
   const [logBody, setLogBody] = React.useState("");
   const [logType, setLogType] = React.useState<EventType>("text");
-  const [logWhen, setLogWhen] = React.useState(() => toLocalDatetimeString(new Date()));
+  const [logWhen, setLogWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [isSending, setIsSending] = React.useState(false);
   const [logError, setLogError] = React.useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
@@ -59,14 +58,14 @@ export default function ActivityLogPage() {
   const [editProspectId, setEditProspectId] = React.useState("");
   const [editType, setEditType] = React.useState<EventType>("text");
   const [editBody, setEditBody] = React.useState("");
-  const [editWhen, setEditWhen] = React.useState(() => toLocalDatetimeString(new Date()));
+  const [editWhen, setEditWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
 
   // Screenshot modal
   const [isScreenshotOpen, setIsScreenshotOpen] = React.useState(false);
   const [screenshotProspectId, setScreenshotProspectId] = React.useState("");
-  const [screenshotWhen, setScreenshotWhen] = React.useState(() => toLocalDatetimeString(new Date()));
+  const [screenshotWhen, setScreenshotWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [screenshotPreview, setScreenshotPreview] = React.useState<string | null>(null);
   const [screenshotFile, setScreenshotFile] = React.useState<File | null>(null);
   const [isParsing, setIsParsing] = React.useState(false);
@@ -148,8 +147,7 @@ export default function ActivityLogPage() {
 
     setIsSending(true);
     setLogError(null);
-    const whenDate = new Date(logWhen);
-    const createdAt = isNaN(whenDate.getTime()) ? new Date().toISOString() : whenDate.toISOString();
+    const createdAt = parseDatetimeLocalToUtcIso(logWhen) ?? new Date().toISOString();
 
     const insertPayload: Record<string, unknown> = {
       prospect_id: selectedProspectId,
@@ -169,7 +167,7 @@ export default function ActivityLogPage() {
       } else { setLogError(insertError.message); setIsSending(false); return; }
     }
     setLogBody("");
-    setLogWhen(toLocalDatetimeString(new Date()));
+    setLogWhen(toLocalDatetimeInputValue(new Date()));
     setIsLogOpen(false);
     setIsSending(false);
     await loadEntries(client);
@@ -226,9 +224,9 @@ export default function ActivityLogPage() {
     setIsSavingScreenshot(true);
     setScreenshotError(null);
 
-    const whenDate = new Date(screenshotWhen);
     const nowMs = Date.now();
-    const parsedMs = isNaN(whenDate.getTime()) ? nowMs : whenDate.getTime();
+    const parsedIso = parseDatetimeLocalToUtcIso(screenshotWhen);
+    const parsedMs = parsedIso ? new Date(parsedIso).getTime() : nowMs;
     const baseMs = Math.min(parsedMs, nowMs);
     const rows = selectedMessages.map((msg, idx) => {
       const row: Record<string, unknown> = {
@@ -255,7 +253,7 @@ export default function ActivityLogPage() {
     setParsedMessages([]);
     setSelectedParsedIdx(new Set());
     setScreenshotProspectId("");
-    setScreenshotWhen(toLocalDatetimeString(new Date()));
+    setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
     setIsSavingScreenshot(false);
     await loadEntries(client);
   };
@@ -268,7 +266,7 @@ export default function ActivityLogPage() {
     setSelectedParsedIdx(new Set());
     setScreenshotError(null);
     setScreenshotProspectId("");
-    setScreenshotWhen(toLocalDatetimeString(new Date()));
+    setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
   };
 
   const handleOpenEditEntry = (entry: LogEntry) => {
@@ -276,7 +274,7 @@ export default function ActivityLogPage() {
     setEditProspectId(entry.prospectId);
     setEditType(entry.eventType);
     setEditBody(entry.body);
-    setEditWhen(toLocalDatetimeString(new Date(entry.createdAt)));
+    setEditWhen(toLocalDatetimeInputValue(new Date(entry.createdAt)));
     setEditError(null);
     setIsEditOpen(true);
   };
@@ -331,7 +329,7 @@ export default function ActivityLogPage() {
               setScreenshotFile(null);
               setScreenshotPreview(null);
               setScreenshotProspectId(filterProspectId);
-              setScreenshotWhen(toLocalDatetimeString(new Date()));
+              setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
               setIsScreenshotOpen(true);
             }}
             className="flex items-center gap-2 border border-blue-400/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
@@ -342,7 +340,7 @@ export default function ActivityLogPage() {
           <button
             type="button"
             onClick={() => {
-              setLogWhen(toLocalDatetimeString(new Date()));
+              setLogWhen(toLocalDatetimeInputValue(new Date()));
               setLogError(null);
               setSelectedProspectId(filterProspectId);
               setIsLogOpen(true);
@@ -744,6 +742,9 @@ function formatTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 0) {
+    return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
   const min = Math.floor(diffMs / 60_000);
   const hrs = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);

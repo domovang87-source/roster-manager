@@ -324,7 +324,11 @@ export default function HomePage() {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
-        const res = await fetch("/api/daily-narrative", { cache: "no-store", signal: controller.signal });
+        const res = await fetch("/api/daily-narrative", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
         clearTimeout(timeout);
         const data = (await res.json()) as { synopsis?: string };
         setSynopsis(data.synopsis ?? "No activity to summarize yet.");
@@ -563,13 +567,13 @@ export default function HomePage() {
   const tierLabels: Record<Tier, string> = { A: "A Tier", B: "B Tier", C: "C Tier" };
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5 sm:space-y-8">
       {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-[0.35em]">STACK</h1>
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
+        <div className="space-y-1 sm:space-y-3">
+          <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
           <Link
             href="/roster"
             className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)]"
@@ -639,7 +643,7 @@ export default function HomePage() {
 
       {/* Onboarding step 1: no prospects yet */}
       {!hasProspects ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 1 of 3</p>
           <h2 className="mt-2 text-base font-semibold tracking-wide">Who are you texting right now?</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
@@ -657,7 +661,7 @@ export default function HomePage() {
 
       {/* Onboarding step 2: has prospects but no activity */}
       {hasProspects && !hasActivity ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6">
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 2 of 3</p>
           <h2 className="mt-2 text-base font-semibold tracking-wide">Drop your last convo</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
@@ -683,7 +687,7 @@ export default function HomePage() {
 
       {/* Onboarding step 3: has activity but hasn't generated a draft yet */}
       {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
-        <section className="border border-emerald-500/30 bg-emerald-500/5 p-6">
+        <section className="border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-400/70">Step 3 of 3 · Free</p>
           <h2 className="mt-2 text-base font-semibold tracking-wide">Get your first AI draft</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
@@ -694,9 +698,9 @@ export default function HomePage() {
 
       {/* AI Summary — only show when there's actual data */}
       {hasProspects && hasActivity ? (
-        <section className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.5em] text-[var(--rm-text-muted)]">AI Summary</p>
-          <p className="text-sm text-[var(--rm-text-muted)]">
+        <section className="space-y-1.5 sm:space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.45em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.5em]">AI Summary</p>
+          <p className="text-xs text-[var(--rm-text-muted)] sm:text-sm">
             {loadingNarrative ? "Generating summary..." : synopsis}
           </p>
         </section>
@@ -709,11 +713,11 @@ export default function HomePage() {
             const visibleProspects = tierProspects[tier].filter((p) => !dismissedProspectIds.has(p.id));
             if (visibleProspects.length === 0) return null;
             return (
-              <section key={tier} className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
+              <section key={tier} className="space-y-2 sm:space-y-3">
+                <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.4em]">
                   {tierLabels[tier]}
                 </p>
-                <div className="space-y-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
+                <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3 sm:space-y-3 sm:p-4">
                   {visibleProspects.map((prospect) => {
                     const draftId = prospect.draftId;
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
@@ -724,7 +728,7 @@ export default function HomePage() {
                     return (
                       <div
                         key={prospect.id}
-                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-5 transition-opacity duration-200 ${
+                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3 transition-opacity duration-200 sm:p-5 ${
                           dismissingDraftIds[dismissKey] ? "opacity-0" : "opacity-100"
                         }`}
                       >
@@ -926,6 +930,9 @@ function formatRelativeTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 0) {
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
   const min = Math.floor(diffMs / 60_000);
   const hrs = Math.floor(diffMs / 3_600_000);
   const days = Math.floor(diffMs / 86_400_000);

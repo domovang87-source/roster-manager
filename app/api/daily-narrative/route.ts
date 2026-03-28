@@ -1,28 +1,23 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const getSupabaseServerClient = () => {
-  if (!supabaseUrl || !supabaseAnonKey) return null;
-  return createClient(supabaseUrl, supabaseAnonKey);
-};
+import { createServerSupabase } from "@/lib/supabase/server";
 
 type Tier = "A" | "B" | "C";
 
 const DEFAULT_REMIND_DAYS: Record<Tier, number> = { A: 7, B: 14, C: 30 };
 
+const allClear = "All quiet. No one needs attention right now.";
+
 export async function GET() {
-  const supabase = getSupabaseServerClient();
-
-  const allClear = "All quiet. No one needs attention right now.";
-
-  if (!supabase) {
-    return NextResponse.json({ synopsis: allClear });
-  }
-
   try {
+    const supabase = await createServerSupabase();
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ synopsis: allClear });
+    }
+
     const [prospectsRes, messagesRes, dismissedRes, draftsRes, rulesRes] = await Promise.all([
       supabase.from("prospects").select("id,name,tier"),
       supabase
@@ -37,11 +32,7 @@ export async function GET() {
         .not("dismissed_at", "is", null)
         .order("dismissed_at", { ascending: false })
         .limit(5000),
-      supabase
-        .from("scheduled_replies")
-        .select("prospect_id")
-        .eq("status", "scheduled")
-        .limit(100),
+      supabase.from("scheduled_replies").select("prospect_id").eq("status", "scheduled").limit(100),
       supabase.from("tier_rules").select("tier,remind_after_days"),
     ]);
 
@@ -125,7 +116,7 @@ export async function GET() {
     const synopsis = snippets.join(" ").trim() || allClear;
     return NextResponse.json({ synopsis });
   } catch (err) {
-    console.error("OpenAI daily-narrative error:", err);
+    console.error("daily-narrative error:", err);
     return NextResponse.json({ synopsis: allClear });
   }
 }
