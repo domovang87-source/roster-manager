@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { getSupabaseClient } from "./supabase/client";
 
 function clearProCache() {
@@ -45,7 +52,19 @@ async function fetchSubscriptionStatus(): Promise<SubPayload> {
   };
 }
 
-export function useProStatus() {
+export type ProStatusContextValue = {
+  isPro: boolean;
+  isElite: boolean;
+  checked: boolean;
+  markPro: (opts?: { elite?: boolean }) => void;
+};
+
+const ProStatusContext = createContext<ProStatusContextValue | null>(null);
+
+/**
+ * Single subscription source for all tabs + BottomNav (avoids duplicate hook state).
+ */
+export function ProStatusProvider({ children }: { children: React.ReactNode }) {
   const [isPro, setIsPro] = useState(false);
   const [isElite, setIsElite] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -53,6 +72,8 @@ export function useProStatus() {
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
+      setIsPro(false);
+      setIsElite(false);
       setChecked(true);
       return;
     }
@@ -62,6 +83,8 @@ export function useProStatus() {
     function applyFromServer(payload: SubPayload) {
       if (cancelled) return;
       if (payload.lookupFailed) {
+        setIsPro(false);
+        setIsElite(false);
         setChecked(true);
         return;
       }
@@ -105,14 +128,24 @@ export function useProStatus() {
         return;
       }
 
-      // Re-fetch when the logged-in user changes or on first hydration.
-      // Skip TOKEN_REFRESHED to avoid hammering the API on silent refresh.
       if (
         event === "INITIAL_SESSION" ||
         event === "SIGNED_IN" ||
         event === "USER_UPDATED"
       ) {
         void syncFromServer();
+      }
+    });
+
+    void client.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (session) {
+        void syncFromServer();
+      } else {
+        clearProCache();
+        setIsPro(false);
+        setIsElite(false);
+        setChecked(true);
       }
     });
 
@@ -129,5 +162,18 @@ export function useProStatus() {
     setProCache(elite);
   }, []);
 
-  return { isPro, isElite, checked, markPro };
+  const value = useMemo(
+    () => ({ isPro, isElite, checked, markPro }),
+    [isPro, isElite, checked, markPro]
+  );
+
+  return <ProStatusContext.Provider value={value}>{children}</ProStatusContext.Provider>;
+}
+
+export function useProStatus(): ProStatusContextValue {
+  const ctx = useContext(ProStatusContext);
+  if (!ctx) {
+    throw new Error("useProStatus must be used within ProStatusProvider");
+  }
+  return ctx;
 }

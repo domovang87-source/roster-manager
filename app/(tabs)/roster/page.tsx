@@ -5,7 +5,7 @@ import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/c
 import { Clock, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
-import { FREE_ROSTER_SLOTS } from "../../../lib/free-tier";
+import { rosterRequiresUpgradeForUi } from "../../../lib/free-tier";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
 import { useSession } from "../../../lib/use-session";
@@ -84,7 +84,7 @@ export default function RosterPage() {
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(
     undefined
   );
-  const { isPro } = useProStatus();
+  const { isPro, checked: subscriptionChecked } = useProStatus();
   const { userId } = useSession();
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
   const [deleteConfirmStep, setDeleteConfirmStep] = React.useState(false);
@@ -110,12 +110,17 @@ export default function RosterPage() {
       return;
     }
 
+    if (!userId) {
+      setIsLoading(true);
+      return;
+    }
+
     const fetchProspects = async () => {
       setIsLoading(true);
       setError(null);
 
       const [prospectsResult, messagesResult, dismissedResult, rulesResult] = await Promise.all([
-        client.from("prospects").select("id,name,tier,vibe_notes,phone_number"),
+        client.from("prospects").select("id,name,tier,vibe_notes,phone_number,user_id"),
         client.from("messages").select("prospect_id,created_at").order("created_at", { ascending: false }).limit(5000),
         client
           .from("scheduled_replies")
@@ -159,6 +164,8 @@ export default function RosterPage() {
       const now = Date.now();
 
       (prospectsResult.data ?? []).forEach((row) => {
+        const rowUid = row.user_id as string | null | undefined;
+        if (rowUid == null || String(rowUid) !== userId) return;
         const rowTier = row.tier as Tier | undefined;
         if (!rowTier || !nextMap[rowTier]) return;
         const pid = String(row.id);
@@ -187,7 +194,7 @@ export default function RosterPage() {
     };
 
     fetchProspects();
-  }, []);
+  }, [userId]);
 
   React.useEffect(() => {
     if (!selectedProspect) {
@@ -260,8 +267,15 @@ export default function RosterPage() {
     0
   );
 
+  const freeTierRosterFull = rosterRequiresUpgradeForUi(
+    totalProspects,
+    subscriptionChecked,
+    isPro
+  );
+
   const handleNewProspectClick = () => {
-    if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
+    if (isLoading) return;
+    if (freeTierRosterFull) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
     } else {
@@ -277,7 +291,7 @@ export default function RosterPage() {
       setError("Name is required.");
       return;
     }
-    if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
+    if (freeTierRosterFull) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
       setIsModalOpen(false);
@@ -287,23 +301,44 @@ export default function RosterPage() {
     setIsSaving(true);
     setError(null);
 
-    const { data, error: insertError } = await client
-      .from("prospects")
-      .insert({
+    const res = await fetch("/api/prospects", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         name: trimmedName,
         tier: newTier,
         phone_number: newPhone.trim() || null,
-        ...(userId ? { user_id: userId } : {}),
-      })
-      .select("id,name,tier,vibe_notes,phone_number")
-      .single();
+      }),
+    });
+    const payload = (await res.json()) as {
+      data?: {
+        id: string;
+        name: string | null;
+        tier: string | null;
+        vibe_notes: string | null;
+        phone_number: string | null;
+      };
+      error?: string;
+      code?: string;
+    };
 
-    if (insertError || !data) {
-      console.error("Create prospect error:", insertError);
-      setError(insertError?.message ?? "Failed to create prospect.");
+    if (res.status === 403 && payload.code === "ROSTER_LIMIT") {
+      setPaywallFeature("Unlimited roster");
+      setShowPaywall(true);
+      setIsModalOpen(false);
       setIsSaving(false);
       return;
     }
+
+    if (!res.ok || !payload.data) {
+      console.error("Create prospect error:", payload.error, res.status);
+      setError(payload.error ?? "Failed to create prospect.");
+      setIsSaving(false);
+      return;
+    }
+
+    const data = payload.data;
 
     setTierMap((prev) => ({
       ...prev,
@@ -498,15 +533,14 @@ export default function RosterPage() {
         <button
           type="button"
           onClick={handleNewProspectClick}
-          className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition ${
-            !isPro && totalProspects >= FREE_ROSTER_SLOTS
+          disabled={isLoading}
+          className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            freeTierRosterFull
               ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200/95 hover:border-emerald-400/70"
               : "border-[var(--rm-border)] hover:border-[var(--rm-text)]"
           }`}
         >
-          {!isPro && totalProspects >= FREE_ROSTER_SLOTS
-            ? "Upgrade · more roster"
-            : "Add person"}
+          {freeTierRosterFull ? "Upgrade · more roster" : "Add person"}
         </button>
       </header>
 

@@ -10,8 +10,12 @@ const proPriceIds = {
   yearly: process.env.STRIPE_PRICE_ID_YEARLY ?? "",
 };
 
+/** Elite: prefer plan-specific IDs; monthly can fall back to STRIPE_PRICE_ID_ELITE for dev/single-price setups. */
 const elitePriceIds = {
-  monthly: process.env.STRIPE_PRICE_ID_ELITE_MONTHLY ?? "",
+  monthly:
+    process.env.STRIPE_PRICE_ID_ELITE_MONTHLY ??
+    process.env.STRIPE_PRICE_ID_ELITE ??
+    "",
   yearly: process.env.STRIPE_PRICE_ID_ELITE_YEARLY ?? "",
 };
 
@@ -34,7 +38,9 @@ export async function POST(req: Request) {
       {
         error:
           tier === "elite"
-            ? `Elite Stripe price ID for ${plan} billing is not configured (set STRIPE_PRICE_ID_ELITE_MONTHLY / STRIPE_PRICE_ID_ELITE_YEARLY).`
+            ? plan === "yearly"
+              ? "Elite yearly checkout needs STRIPE_PRICE_ID_ELITE_YEARLY in your env (Stripe Dashboard → Product → Price ID)."
+              : "Elite monthly checkout needs STRIPE_PRICE_ID_ELITE_MONTHLY or STRIPE_PRICE_ID_ELITE in your env (Stripe Dashboard → Product → Price ID)."
             : `Stripe price ID for ${plan} plan is not configured.`,
       },
       { status: 500 }

@@ -17,10 +17,11 @@ const PRO_PERKS = [
   "Unlimited roster · save Logic Lab cadence & voice per tier",
 ];
 
-const ELITE_PERKS = [
-  "Unlimited AI drafts & regenerations",
+/** Shown under “Elite only” — Pro list is repeated above so Elite = Pro + these. */
+const ELITE_ONLY_PERKS = [
+  "Unlimited regenerations on every draft (no 5-per-draft cap)",
   "Advanced tone styles (playful, dominant, warm, minimal, …)",
-  "Early access features",
+  "Early access to new features",
   "Priority support",
 ];
 
@@ -154,19 +155,45 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
             </button>
           </div>
 
-          {/* Elite */}
+          {/* Elite = everything in Pro + extras */}
           <div className="flex flex-col border border-amber-500/35 bg-amber-500/[0.03] p-5">
             <p className="text-[11px] uppercase tracking-[0.3em] text-amber-400/90">Elite</p>
             <p className="mt-3 text-lg font-semibold">{elitePrice}</p>
             <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{eliteSub}</p>
-            <ul className="mt-4 flex-1 space-y-2">
-              {ELITE_PERKS.map((perk) => (
-                <li key={perk} className="flex items-start gap-2.5 text-xs text-[var(--rm-text-muted)]">
-                  <Check size={13} strokeWidth={2} className="mt-0.5 shrink-0 text-amber-400" />
-                  {perk}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-4 flex-1 space-y-4">
+              <div>
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
+                  Everything in Pro
+                </p>
+                <ul className="space-y-1.5">
+                  {PRO_PERKS.map((perk) => (
+                    <li
+                      key={`elite-pro-${perk}`}
+                      className="flex items-start gap-2 text-[11px] leading-snug text-[var(--rm-text-muted)]"
+                    >
+                      <Check size={12} strokeWidth={2} className="mt-0.5 shrink-0 text-emerald-500/75" />
+                      {perk}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-amber-400/95">
+                  Elite only
+                </p>
+                <ul className="space-y-1.5">
+                  {ELITE_ONLY_PERKS.map((perk) => (
+                    <li
+                      key={perk}
+                      className="flex items-start gap-2 text-[11px] leading-snug text-[var(--rm-text-muted)]"
+                    >
+                      <Check size={12} strokeWidth={2} className="mt-0.5 shrink-0 text-amber-400" />
+                      {perk}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => handleSubscribe("elite")}

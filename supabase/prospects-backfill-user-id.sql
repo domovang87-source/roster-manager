@@ -1,0 +1,12 @@
+-- Fix prospects with NULL user_id (old client inserts). Without user_id, the server cannot
+-- count them toward your free-tier cap and you could add duplicates.
+--
+-- 1) Inspect:
+--    SELECT id, name, tier, user_id, created_at FROM prospects WHERE user_id IS NULL ORDER BY created_at;
+--
+-- 2) Attach rows you know are yours (replace UUID):
+--    UPDATE prospects
+--    SET user_id = 'YOUR_AUTH_USER_UUID'::uuid
+--    WHERE user_id IS NULL AND id IN ('prospect-uuid-1', 'prospect-uuid-2');
+--
+-- 3) Prefer long-term: RLS policy "Users manage own prospects" from user-isolation-migration.sql
