@@ -5,6 +5,45 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
+/** Space out auth emails client-side so we don’t burn Supabase’s tight default email quota. */
+const AUTH_EMAIL_COOLDOWN_MS = 55_000;
+const AUTH_EMAIL_COOLDOWN_AFTER_RATE_LIMIT_MS = 10 * 60_000;
+
+function authEmailCooldownKey(email: string) {
+  return `stack_auth_email_until_${email.trim().toLowerCase()}`;
+}
+
+function getAuthEmailCooldownRemainingSec(email: string): number {
+  if (typeof window === "undefined") return 0;
+  const until = Number.parseInt(sessionStorage.getItem(authEmailCooldownKey(email)) ?? "0", 10);
+  if (!until || Number.isNaN(until)) return 0;
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+function scheduleAuthEmailCooldown(email: string, msFromNow: number) {
+  if (typeof window === "undefined" || !email.trim()) return;
+  sessionStorage.setItem(authEmailCooldownKey(email), String(Date.now() + msFromNow));
+}
+
+function isAuthEmailRateLimited(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  const code = String((err as { code?: string }).code ?? "").toLowerCase();
+  const msg = (err.message ?? "").toLowerCase();
+  return (
+    code === "over_email_send_rate_limit" ||
+    msg.includes("email rate limit") ||
+    msg.includes("rate limit exceeded")
+  );
+}
+
+function messageForAuthEmailError(err: { message?: string; code?: string } | null): string {
+  if (!err) return "Something went wrong.";
+  if (isAuthEmailRateLimited(err)) {
+    return "Too many confirmation emails were requested. Wait about an hour, then try again—and check spam for a link you may already have. Still stuck? Ask the team to turn on custom SMTP in Supabase (Dashboard → Authentication → SMTP) so signups aren’t capped.";
+  }
+  return err.message ?? "Something went wrong.";
+}
+
 type View = "sign_in" | "sign_up" | "forgot";
 
 function isEmailNotConfirmed(err: { message?: string; code?: string } | null): boolean {
@@ -83,21 +122,29 @@ export default function LoginPage() {
       setError("Enter your email above first.");
       return;
     }
+    const em = email.trim();
+    const waitSec = getAuthEmailCooldownRemainingSec(em);
+    if (waitSec > 0) {
+      setError(`Please wait ${waitSec}s before requesting another email.`);
+      return;
+    }
     setResendLoading(true);
     setError(null);
     setSuccessMessage(null);
+    let rateLimited = false;
     try {
       const origin =
         typeof window !== "undefined" ? window.location.origin : "";
       const { error: resendError } = await supabase.auth.resend({
         type: "signup",
-        email: email.trim(),
+        email: em,
         options: {
           emailRedirectTo: `${origin}/auth/callback`,
         },
       });
       if (resendError) {
-        setError(resendError.message);
+        rateLimited = isAuthEmailRateLimited(resendError);
+        setError(messageForAuthEmailError(resendError));
         return;
       }
       setSuccessMessage(
@@ -105,6 +152,10 @@ export default function LoginPage() {
       );
       setShowResendConfirmation(false);
     } finally {
+      scheduleAuthEmailCooldown(
+        em,
+        rateLimited ? AUTH_EMAIL_COOLDOWN_AFTER_RATE_LIMIT_MS : AUTH_EMAIL_COOLDOWN_MS
+      );
       setResendLoading(false);
     }
   };
@@ -121,25 +172,34 @@ export default function LoginPage() {
         setError("Enter the email for your account.");
         return;
       }
+      const em = email.trim();
+      const waitSec = getAuthEmailCooldownRemainingSec(em);
+      if (waitSec > 0) {
+        setError(`Please wait ${waitSec}s before requesting another email.`);
+        return;
+      }
       setLoading(true);
       resetFormMessages();
+      let rateLimited = false;
       try {
         const origin =
           typeof window !== "undefined" ? window.location.origin : "";
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-          email.trim(),
-          {
-            redirectTo: `${origin}/auth/callback?next=/auth/reset-password`,
-          }
-        );
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(em, {
+          redirectTo: `${origin}/auth/callback?next=/auth/reset-password`,
+        });
         if (resetError) {
-          setError(resetError.message);
+          rateLimited = isAuthEmailRateLimited(resetError);
+          setError(messageForAuthEmailError(resetError));
           return;
         }
         setSuccessMessage(
           "If an account exists for that email, we sent a reset link. Check your inbox and spam."
         );
       } finally {
+        scheduleAuthEmailCooldown(
+          em,
+          rateLimited ? AUTH_EMAIL_COOLDOWN_AFTER_RATE_LIMIT_MS : AUTH_EMAIL_COOLDOWN_MS
+        );
         setLoading(false);
       }
       return;
@@ -157,8 +217,15 @@ export default function LoginPage() {
 
     try {
       if (view === "sign_up") {
+        const em = email.trim();
+        const waitSec = getAuthEmailCooldownRemainingSec(em);
+        if (waitSec > 0) {
+          setError(`Please wait ${waitSec}s before trying sign-up again.`);
+          return;
+        }
+        let rateLimited = false;
         const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
+          email: em,
           password,
           options: {
             emailRedirectTo:
@@ -168,16 +235,22 @@ export default function LoginPage() {
           },
         });
         if (signUpError) {
+          rateLimited = isAuthEmailRateLimited(signUpError);
           if (isAlreadyRegistered(signUpError)) {
             setError(
               "This email already has an account. Sign in with your password below — or resend a confirmation email if you never verified."
             );
             setShowResendConfirmation(true);
           } else {
-            setError(signUpError.message);
+            setError(messageForAuthEmailError(signUpError));
           }
+          scheduleAuthEmailCooldown(
+            em,
+            rateLimited ? AUTH_EMAIL_COOLDOWN_AFTER_RATE_LIMIT_MS : AUTH_EMAIL_COOLDOWN_MS
+          );
           return;
         }
+        scheduleAuthEmailCooldown(em, AUTH_EMAIL_COOLDOWN_MS);
         if (data.session) {
           router.push("/home");
         } else {

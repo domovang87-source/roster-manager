@@ -49,3 +49,9 @@ Run `supabase/seed-test-data.sql` in your **Supabase SQL Editor** (Dashboard →
 | Test prospects + messages | Run `seed-test-data.sql` |
 | Twilio/SMS integration | Not yet – "Text" opens native Messages app |
 | App Store / TestFlight | Needs Expo or similar wrapper |
+
+---
+
+## 6. Sign-up “email rate limit exceeded” (Supabase)
+
+Supabase’s **built-in email** has strict hourly limits. For production, use **Authentication → SMTP** in the Supabase dashboard with your own provider (e.g. Resend, Postmark, SES) so real users don’t hit the cap. The login page also spaces out confirmation / reset / resend requests per email in the browser to reduce accidental quota burn.
