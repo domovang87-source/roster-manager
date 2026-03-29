@@ -5,14 +5,12 @@ import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/c
 import { Clock, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
+import { FREE_ROSTER_SLOTS } from "../../../lib/free-tier";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
 import { useSession } from "../../../lib/use-session";
 
 const DEFAULT_REMIND_DAYS: Record<string, number> = { A: 7, B: 14, C: 30 };
-
-/** Free tier: one roster slot; Pro/Elite unlimited. */
-const FREE_ROSTER_LIMIT = 1;
 
 type Tier = "A" | "B" | "C";
 
@@ -263,7 +261,7 @@ export default function RosterPage() {
   );
 
   const handleNewProspectClick = () => {
-    if (!isPro && totalProspects >= FREE_ROSTER_LIMIT) {
+    if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
     } else {
@@ -279,7 +277,7 @@ export default function RosterPage() {
       setError("Name is required.");
       return;
     }
-    if (!isPro && totalProspects >= FREE_ROSTER_LIMIT) {
+    if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
       setIsModalOpen(false);
@@ -487,15 +485,13 @@ export default function RosterPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-wide">
-            Roster Ranking
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-wide">People you&apos;re texting</h1>
           <p className="text-sm text-[var(--rm-text-muted)]">
-            Drag prospects across tiers to match priority.
+            Drag cards between A, B, and C. A = most important, C = casual.
           </p>
           {!isPro ? (
             <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]/90">
-              Free · 1 roster slot · roster AI is Pro · home has 1 AI draft
+              Free: 1 person · more people + full AI = Pro
             </p>
           ) : null}
         </div>
@@ -503,14 +499,14 @@ export default function RosterPage() {
           type="button"
           onClick={handleNewProspectClick}
           className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition ${
-            !isPro && totalProspects >= FREE_ROSTER_LIMIT
+            !isPro && totalProspects >= FREE_ROSTER_SLOTS
               ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200/95 hover:border-emerald-400/70"
               : "border-[var(--rm-border)] hover:border-[var(--rm-text)]"
           }`}
         >
-          {!isPro && totalProspects >= FREE_ROSTER_LIMIT
+          {!isPro && totalProspects >= FREE_ROSTER_SLOTS
             ? "Upgrade · more roster"
-            : "New Prospect"}
+            : "Add person"}
         </button>
       </header>
 

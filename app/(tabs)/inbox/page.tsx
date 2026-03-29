@@ -8,8 +8,11 @@ import {
   toLocalDatetimeInputValue,
 } from "../../../lib/datetime-local";
 import { onScreenshotImportedForProspect } from "../../../lib/draft-outcome-analytics";
+import PaywallModal from "../../../components/PaywallModal";
+import { FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
 import { guessProspectIdFromFilename } from "../../../lib/guess-prospect-from-filename";
 import { guessProspectIdFromThreadHint } from "../../../lib/match-prospect-from-thread-hint";
+import { useProStatus } from "../../../lib/use-pro-status";
 
 type EventType = "text" | "date" | "hangout" | "call" | "note";
 
@@ -53,7 +56,8 @@ function groupLogEntriesForDisplay(entries: LogEntry[]): LogDisplayGroup[] {
     }
   }
   for (const arr of byBatch.values()) {
-    arr.sort((a, x) => new Date(x.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Oldest first so a screenshot reads top-to-bottom like the thread.
+    arr.sort((a, x) => new Date(a.createdAt).getTime() - new Date(x.createdAt).getTime());
   }
   const groups: LogDisplayGroup[] = [];
   for (const [batchId, ents] of byBatch) {
@@ -76,6 +80,31 @@ type ParsedMessage = { direction: string; body: string };
 
 function isReactionBody(body: string): boolean {
   return body.trim().toLowerCase().startsWith("reacted ");
+}
+
+/** One header row per contiguous run of the same kind (e.g. one “Text” for many bubbles). */
+function clusterBatchLinesByKind(entries: LogEntry[]): { label: string; entries: LogEntry[] }[] {
+  const clusters: { label: string; entries: LogEntry[] }[] = [];
+  for (const e of entries) {
+    const reaction = isReactionBody(e.body);
+    const label = reaction
+      ? "Reaction"
+      : (EVENT_CONFIG[e.eventType] ?? EVENT_CONFIG.text).label;
+    const last = clusters[clusters.length - 1];
+    if (last && last.label === label) last.entries.push(e);
+    else clusters.push({ label, entries: [e] });
+  }
+  return clusters;
+}
+
+function batchLineBubbleClass(entry: LogEntry): string {
+  if (isReactionBody(entry.body)) {
+    return "border-pink-400/25 bg-pink-500/[0.08]";
+  }
+  if (entry.direction === "inbound") {
+    return "border-slate-500/30 bg-slate-500/[0.08]";
+  }
+  return "border-sky-500/25 bg-sky-950/40";
 }
 
 export default function ActivityLogPage() {
@@ -102,6 +131,7 @@ export default function ActivityLogPage() {
   const [editType, setEditType] = React.useState<EventType>("text");
   const [editBody, setEditBody] = React.useState("");
   const [editWhen, setEditWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
+  const [editDirection, setEditDirection] = React.useState<"inbound" | "outbound">("outbound");
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
@@ -120,6 +150,15 @@ export default function ActivityLogPage() {
   const [screenshotThreadTitle, setScreenshotThreadTitle] = React.useState<string | null>(null);
   const [screenshotMatchSource, setScreenshotMatchSource] = React.useState<"thread" | "filename" | null>(null);
   const [importToast, setImportToast] = React.useState<string | null>(null);
+  const [messageTotalCount, setMessageTotalCount] = React.useState(0);
+  const [showPaywall, setShowPaywall] = React.useState(false);
+  const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
+  const { isPro, checked } = useProStatus();
+
+  const refreshMessageCount = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
+    const { count } = await client.from("messages").select("id", { count: "exact", head: true });
+    setMessageTotalCount(count ?? 0);
+  }, []);
 
   const loadEntries = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
     const mapRow = (
@@ -206,7 +245,8 @@ export default function ActivityLogPage() {
         mapRow(row as unknown as Record<string, unknown>, !eventCol, !batchCol)
       )
     );
-  }, [hasEventTypeCol, hasImportBatchCol]);
+    await refreshMessageCount(client);
+  }, [hasEventTypeCol, hasImportBatchCol, refreshMessageCount]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -225,10 +265,21 @@ export default function ActivityLogPage() {
     loadEntries(client);
   }, [loadEntries]);
 
+  const logBlocked = checked && !isPro && messageTotalCount >= FREE_MESSAGE_LOG_CAP;
+
+  const openLogPaywall = () => {
+    setPaywallFeature("Texts");
+    setShowPaywall(true);
+  };
+
   // Manual log handler
   const handleLogEntry = async () => {
     const client = supabaseRef.current;
     if (!client) return;
+    if (logBlocked) {
+      openLogPaywall();
+      return;
+    }
     if (!selectedProspectId) { setLogError("Pick who this is about"); return; }
     if (!logBody.trim()) { setLogError("Add some details about what happened"); return; }
 
@@ -333,6 +384,11 @@ export default function ActivityLogPage() {
   const handleSaveScreenshotMessages = async () => {
     const client = supabaseRef.current;
     if (!client || !screenshotProspectId || parsedMessages.length === 0) return;
+    if (checked && !isPro && messageTotalCount + parsedMessages.length > FREE_MESSAGE_LOG_CAP) {
+      setPaywallFeature("Screenshot import");
+      setShowPaywall(true);
+      return;
+    }
 
     setIsSavingScreenshot(true);
     setScreenshotError(null);
@@ -375,6 +431,21 @@ export default function ActivityLogPage() {
 
     onScreenshotImportedForProspect(screenshotProspectId);
 
+    const savedTier = prospects.find((p) => p.id === screenshotProspectId)?.tier ?? null;
+    const savedCount = parsedMessages.length;
+    const savedThread = Boolean(screenshotThreadTitle);
+    const savedMatch = screenshotMatchSource ?? "none";
+    void fetch("/api/metrics/screenshot-import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageCount: savedCount,
+        threadTitlePresent: savedThread,
+        matchSource: savedMatch,
+        tier: savedTier,
+      }),
+    }).catch(() => {});
+
     const who = prospects.find((p) => p.id === screenshotProspectId)?.name ?? "them";
     setImportToast(
       `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s momentum updated`
@@ -410,6 +481,7 @@ export default function ActivityLogPage() {
     setEditProspectId(entry.prospectId);
     setEditType(entry.eventType);
     setEditBody(entry.body);
+    setEditDirection(entry.direction === "inbound" ? "inbound" : "outbound");
     setEditWhen(toLocalDatetimeInputValue(new Date(entry.createdAt)));
     setEditError(null);
     setIsEditOpen(true);
@@ -429,6 +501,7 @@ export default function ActivityLogPage() {
       prospect_id: editProspectId,
       body: editBody.trim(),
       created_at: createdAt,
+      direction: editDirection,
     };
     if (hasEventTypeCol) payload.event_type = editType;
     const { error: updateError } = await client.from("messages").update(payload).eq("id", editingEntryId);
@@ -501,30 +574,45 @@ export default function ActivityLogPage() {
     [filtered]
   );
 
+  const tryOpenScreenshot = () => {
+    if (logBlocked) {
+      openLogPaywall();
+      return;
+    }
+    setScreenshotError(null);
+    setParsedMessages([]);
+    setScreenshotFile(null);
+    setScreenshotPreview(null);
+    setScreenshotFilenameLabel("");
+    setScreenshotProspectId(filterProspectId || (prospects.length === 1 ? prospects[0].id : ""));
+    setIsScreenshotOpen(true);
+  };
+
+  const tryOpenManualLog = () => {
+    if (logBlocked) {
+      openLogPaywall();
+      return;
+    }
+    setLogWhen(toLocalDatetimeInputValue(new Date()));
+    setLogType("text");
+    setLogError(null);
+    setSelectedProspectId(filterProspectId || (prospects.length === 1 ? prospects[0].id : ""));
+    setIsLogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-wide">Activity Log</h1>
+          <h1 className="text-3xl font-semibold tracking-wide">Your texts</h1>
           <p className="text-sm text-[var(--rm-text-muted)]">
-            Quick screenshot import and logging — each thread’s momentum on Home grows when you keep this fresh.
+            Screenshot a chat or add a quick note. Home uses this so drafts match what actually happened.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              setScreenshotError(null);
-              setParsedMessages([]);
-              setScreenshotFile(null);
-              setScreenshotPreview(null);
-              setScreenshotFilenameLabel("");
-              setScreenshotProspectId(
-                filterProspectId ||
-                  (prospects.length === 1 ? prospects[0].id : "")
-              );
-              setIsScreenshotOpen(true);
-            }}
+            onClick={tryOpenScreenshot}
             className="flex items-center gap-2 border border-blue-400/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
           >
             <ImagePlus size={14} strokeWidth={1.25} />
@@ -532,15 +620,7 @@ export default function ActivityLogPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setLogWhen(toLocalDatetimeInputValue(new Date()));
-              setLogType("text");
-              setLogError(null);
-              setSelectedProspectId(
-                filterProspectId || (prospects.length === 1 ? prospects[0].id : "")
-              );
-              setIsLogOpen(true);
-            }}
+            onClick={tryOpenManualLog}
             className="flex items-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
           >
             <Plus size={14} strokeWidth={1.25} />
@@ -548,6 +628,21 @@ export default function ActivityLogPage() {
           </button>
         </div>
       </header>
+
+      {logBlocked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
+          <span>
+            Free tier: {FREE_MESSAGE_LOG_CAP} logged events max. Upgrade for unlimited screenshots &amp; logging.
+          </span>
+          <button
+            type="button"
+            onClick={openLogPaywall}
+            className="shrink-0 border border-amber-400/60 px-3 py-1.5 text-[10px] uppercase tracking-[0.25em] text-amber-200 transition hover:bg-amber-400/15"
+          >
+            Upgrade
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="border border-rose-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-rose-400">
@@ -573,31 +668,25 @@ export default function ActivityLogPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setFilterProspectId("")}
-          className={`border px-3 py-1 text-[10px] uppercase tracking-[0.3em] ${
-            !filterProspectId ? "border-[var(--rm-text)] text-[var(--rm-text)]" : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-          }`}
+      <label className="flex max-w-md flex-col gap-1 text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
+        <span>Filter by person</span>
+        <select
+          value={filterProspectId}
+          onChange={(e) => setFilterProspectId(e.target.value)}
+          className="border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm font-normal normal-case tracking-normal text-[var(--rm-text)]"
         >
-          All
-        </button>
-        {prospects.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => setFilterProspectId(p.id)}
-            className={`border px-3 py-1 text-[10px] uppercase tracking-[0.3em] ${
-              filterProspectId === p.id ? "border-[var(--rm-text)] text-[var(--rm-text)]" : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-            }`}
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
+          <option value="">All people</option>
+          {[...prospects]
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.tier})
+              </option>
+            ))}
+        </select>
+      </label>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {filtered.length === 0 ? (
           <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 text-center">
             <p className="text-sm text-[var(--rm-text-muted)]">
@@ -666,16 +755,17 @@ export default function ActivityLogPage() {
 
             const batch = group.entries;
             const head = batch[0];
+            const lineClusters = clusterBatchLinesByKind(batch);
             return (
               <div
                 key={group.batchId}
-                className="border border-blue-500/35 bg-blue-500/[0.06] p-3"
+                className="border border-blue-500/30 bg-blue-500/[0.05] p-2 sm:p-2.5"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-500/20 pb-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <ImagePlus size={14} strokeWidth={1.25} className="shrink-0 text-blue-400/90" />
-                    <p className="text-sm font-semibold">{head.prospectName}</p>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-blue-300/90">
+                <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-blue-500/15 pb-1.5">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <ImagePlus size={13} strokeWidth={1.25} className="shrink-0 text-blue-400/90" />
+                    <p className="text-sm font-semibold leading-tight">{head.prospectName}</p>
+                    <span className="text-[9px] uppercase tracking-[0.18em] text-blue-300/85">
                       Screenshot import · {batch.length} lines
                     </span>
                   </div>
@@ -684,45 +774,47 @@ export default function ActivityLogPage() {
                       type="button"
                       onClick={() => void handleDeleteImportBatch(group.batchId, head.prospectName, batch.length)}
                       disabled={deletingBatchId === group.batchId}
-                      className="flex shrink-0 items-center gap-1.5 border border-rose-500/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-rose-300/95 transition hover:bg-rose-500/15 disabled:opacity-40"
+                      className="flex shrink-0 items-center gap-1 border border-rose-500/40 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-rose-300/95 transition hover:bg-rose-500/15 disabled:opacity-40"
                     >
                       {deletingBatchId === group.batchId ? (
-                        <Loader2 size={12} className="animate-spin" strokeWidth={1.5} />
+                        <Loader2 size={11} className="animate-spin" strokeWidth={1.5} />
                       ) : (
-                        <Trash2 size={12} strokeWidth={1.5} />
+                        <Trash2 size={11} strokeWidth={1.5} />
                       )}
                       Remove batch
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-2 space-y-2">
-                  {batch.map((entry) => {
-                    const reaction = isReactionBody(entry.body);
-                    const config = reaction
-                      ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
-                      : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
-                    const Icon = config.icon;
-                    return (
-                      <div
-                        key={entry.id}
-                        className="flex items-start gap-2 border border-[var(--rm-border)]/80 bg-[var(--rm-bg)]/80 p-2"
+                <div className="mt-1.5 space-y-1.5">
+                  {lineClusters.map((cluster, cIdx) => (
+                    <div key={`${group.batchId}-c${cIdx}`} className="space-y-0.5">
+                      <p
+                        className={`px-0.5 text-[8px] uppercase tracking-[0.22em] ${
+                          cluster.label === "Reaction"
+                            ? "text-pink-300/90"
+                            : "text-blue-200/75"
+                        }`}
                       >
-                        <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border ${config.colorClass}`}>
-                          <Icon size={12} strokeWidth={1.25} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className={`text-[9px] uppercase tracking-[0.15em] ${config.colorClass.split(" ")[0]}`}>
-                              {config.label}
-                            </span>
-                            <div className="flex shrink-0 items-center gap-0.5">
-                              <span className="text-[9px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]">
-                                {formatTime(entry.createdAt)}
-                              </span>
+                        {cluster.label}
+                      </p>
+                      <div className="space-y-0.5">
+                        {cluster.entries.map((entry) => (
+                          <div key={entry.id} className="flex items-start gap-1">
+                            <div
+                              className={`min-w-0 flex-1 rounded-md border px-2 py-1 text-xs leading-snug text-[var(--rm-text)] ${batchLineBubbleClass(
+                                entry
+                              )}`}
+                            >
+                              <p className="text-[var(--rm-text)]">{entry.body}</p>
+                              <p className="mt-0.5 text-[9px] uppercase tracking-wider text-[var(--rm-text-muted)]/90">
+                                {entry.direction === "inbound" ? "Them" : "You"} · {formatTime(entry.createdAt)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-col items-center gap-0 pt-0.5">
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditEntry(entry)}
-                                className="flex h-7 w-7 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                                className="flex h-6 w-6 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
                                 aria-label="Edit line"
                                 title="Edit"
                               >
@@ -732,7 +824,7 @@ export default function ActivityLogPage() {
                                 type="button"
                                 onClick={() => void handleDeleteEntry(entry)}
                                 disabled={deletingId === entry.id}
-                                className="flex h-7 w-7 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                                className="flex h-6 w-6 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
                                 aria-label="Delete line"
                                 title="Delete this line only"
                               >
@@ -744,11 +836,10 @@ export default function ActivityLogPage() {
                               </button>
                             </div>
                           </div>
-                          <p className="mt-0.5 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
-                        </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -834,10 +925,6 @@ export default function ActivityLogPage() {
                 <X size={18} strokeWidth={1.25} />
               </button>
             </div>
-
-            <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
-              Pick a photo — we read it automatically. Then confirm who it&apos;s with and add everything in one tap.
-            </p>
 
             <div className="mt-4 space-y-4">
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
@@ -933,14 +1020,16 @@ export default function ActivityLogPage() {
                     </p>
                   ) : null}
 
-                  <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
-                    {parsedMessages.length} bubble{parsedMessages.length === 1 ? "" : "s"} ready · times use now (ordered)
+                  <p className="text-[10px] text-[var(--rm-text-muted)]">
+                    {parsedMessages.length} message{parsedMessages.length === 1 ? "" : "s"} · tap{" "}
+                    <span className="text-sky-300/90">Flip</span> if a bubble is on the wrong side (fixes Home
+                    momentum).
                   </p>
                   <div className="max-h-52 space-y-1.5 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
                     {parsedMessages.map((msg, i) => (
                       <div
                         key={i}
-                        className={`flex ${msg.direction === "outbound" ? "justify-end" : "justify-start"}`}
+                        className={`flex flex-col gap-0.5 ${msg.direction === "outbound" ? "items-end" : "items-start"}`}
                       >
                         <div
                           className={`max-w-[85%] border border-transparent px-3 py-2 text-xs ${
@@ -951,6 +1040,24 @@ export default function ActivityLogPage() {
                         >
                           {msg.body}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setParsedMessages((prev) =>
+                              prev.map((m, j) =>
+                                j === i
+                                  ? {
+                                      ...m,
+                                      direction: m.direction === "inbound" ? "outbound" : "inbound",
+                                    }
+                                  : m
+                              )
+                            );
+                          }}
+                          className="text-[9px] uppercase tracking-[0.15em] text-sky-400/90 transition hover:text-sky-300"
+                        >
+                          Flip → {msg.direction === "outbound" ? "Them" : "You"}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1014,6 +1121,36 @@ export default function ActivityLogPage() {
                   })}
                 </div>
               </div>
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Who sent this line</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditDirection("outbound")}
+                    className={`border px-3 py-2 text-xs uppercase tracking-[0.2em] transition ${
+                      editDirection === "outbound"
+                        ? "border-sky-500/60 bg-sky-500/15 text-sky-200/95"
+                        : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    You
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditDirection("inbound")}
+                    className={`border px-3 py-2 text-xs uppercase tracking-[0.2em] transition ${
+                      editDirection === "inbound"
+                        ? "border-slate-400/50 bg-slate-500/15 text-slate-200/95"
+                        : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    Them
+                  </button>
+                </div>
+                <p className="text-[10px] normal-case tracking-normal text-[var(--rm-text-muted)]">
+                  Screenshot import sometimes flips sides — wrong choice here is why Home says “you texted last.”
+                </p>
+              </div>
               <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
                 <span className="flex items-center gap-1.5"><Calendar size={12} strokeWidth={1.25} />When</span>
                 <input type="datetime-local" value={editWhen} onChange={(e) => setEditWhen(e.target.value)} className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]" />
@@ -1047,6 +1184,12 @@ export default function ActivityLogPage() {
           </div>
         </div>
       ) : null}
+
+      <PaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        feature={paywallFeature}
+      />
     </div>
   );
 }

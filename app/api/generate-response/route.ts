@@ -11,6 +11,8 @@ type RequestBody = {
   vibeNotes?: string;
   incomingText: string;
   prospectId?: string;
+  /** When true, the user sent the last text — do not frame the draft as a reply to an unanswered inbound. */
+  youTextedLast?: boolean;
   /** Elite-only tone modifier (ignored when absent). */
   toneStyle?: string;
 };
@@ -90,7 +92,7 @@ async function getActivityContext(
 
 export async function POST(req: Request) {
   const body = (await req.json()) as RequestBody;
-  const { tier, name, vibeNotes, incomingText, prospectId, toneStyle } = body ?? {};
+  const { tier, name, vibeNotes, incomingText, prospectId, toneStyle, youTextedLast } = body ?? {};
 
   if (!tier) {
     return NextResponse.json(
@@ -143,7 +145,10 @@ export async function POST(req: Request) {
     `Prospect: ${name}`,
     vibeNotes ? `Notes: ${vibeNotes}` : null,
     activityLog ? `\nRecent activity log:\n${activityLog}` : null,
-    incomingText ? `\nLatest message from them: "${incomingText}"` : null,
+    incomingText && !youTextedLast ? `\nLatest message from them: "${incomingText}"` : null,
+    youTextedLast
+      ? "\nThread status: The user already sent the last text in this thread. Suggest only an optional follow-up or check-in if it fits the log — not a reply as if the other person is waiting on an answer."
+      : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -154,6 +159,7 @@ export async function POST(req: Request) {
     "Draft a short, natural text message the user can send. " +
     "Use the prospect's notes and activity history to personalize it. " +
     "If there's been no contact in a while, craft a casual re-engagement text. " +
+    "When the user already sent the last message, prefer a light ping or new thread hook only if appropriate; avoid sounding like you're answering a message they never sent. " +
     "Keep it concise and natural — match the energy of the conversation. No quotation marks around the message.";
 
   const userPrompt = `${contextBlock}\n\nDraft a text to send to ${name}.`;

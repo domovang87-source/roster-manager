@@ -3,14 +3,32 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, ThumbsUp, UserPlus, X } from "lucide-react";
+import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, ThumbsUp, UserPlus, Wand2, X } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
 import { expectOutcomeAfterNextScreenshot } from "../../../lib/draft-outcome-analytics";
 import { useProStatus } from "../../../lib/use-pro-status";
+import {
+  momentumPopoverLines,
+  momentumTeaser,
+  type MomentumContext,
+} from "../../../lib/momentum-insight";
+import { DEFAULT_REMIND_DAYS_BY_TIER } from "../../../lib/momentum-check-in";
+import { clampNoteEngagementCredit, theirEngagementCreditFromNoteBody } from "../../../lib/note-engagement-signal";
+import {
+  buildProspectMomentumStateMap,
+  coerceTier,
+  computeThreadMomentum,
+  computeThreadTrailSignals,
+  isReactionMessageBody,
+  remindByTierFromRulesRows,
+  type Tier,
+  type ThreadAgg,
+} from "../../../lib/roster-portfolio-compute";
+import { flattenTierProspects, isAtGhostingRisk } from "../../../lib/portfolio-stats";
+import { FREE_AI_DRAFTS, FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
 
-const FREE_AI_DRAFTS = 1; // free users get this many drafts before paywall
 const PRO_REGEN_LIMIT = 5;
 const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
 
@@ -24,8 +42,6 @@ const ELITE_TONES = [
 
 type EliteToneId = (typeof ELITE_TONES)[number]["id"];
 
-type Tier = "A" | "B" | "C";
-
 type TierProspect = {
   id: string;
   name: string;
@@ -33,12 +49,15 @@ type TierProspect = {
   phoneNumber?: string;
   vibeNotes?: string;
   lastInboundBody?: string;
+  /** Latest outbound text body (when you texted last, show this instead of their bubble as context). */
+  lastOutboundTextBody?: string;
   /** Most recent log line (any type / direction), for the time badge */
   lastActivityAt?: string;
   draftId?: string;
   draftText?: string;
   /** 0–100 thread health for this person (log + screenshot uploads grow it). */
   momentum?: number;
+  momentumContext?: MomentumContext;
 };
 
 type UndoToast = {
@@ -60,27 +79,6 @@ type DismissedDraft = {
 
 const LOCAL_DISMISSED_KEY = "stack_home_dismissed_cards_v1";
 
-type ThreadAgg = {
-  inbound: number;
-  outbound: number;
-  noteCount: number;
-  touchBaseCount: number;
-  total: number;
-};
-
-/** Per-person: rhythm + two-way texts + notes / touch-ins — rewards logging this thread. */
-function computeThreadMomentum(a: ThreadAgg): number {
-  if (a.total === 0) return 0;
-  const totalDir = a.inbound + a.outbound;
-  const balance =
-    totalDir === 0
-      ? 0
-      : Math.min(38, ((2 * Math.min(a.inbound, a.outbound)) / totalDir) * 38);
-  const cadence = Math.min(42, Math.sqrt(a.total) * 11);
-  const followThrough = Math.min(24, a.noteCount * 3.2 + a.touchBaseCount * 3.5);
-  return Math.min(100, Math.round(cadence * 0.45 + balance * 0.45 + followThrough * 0.35));
-}
-
 function loadRegenMap(): Record<string, number> {
   if (typeof window === "undefined") return {};
   try {
@@ -94,8 +92,7 @@ function loadRegenMap(): Record<string, number> {
 
 export default function HomePage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
-  const [synopsis, setSynopsis] = React.useState("Awaiting AI summary...");
-  const [loadingNarrative, setLoadingNarrative] = React.useState(true);
+  const remindByTierRef = React.useRef<Record<Tier, number>>({ ...DEFAULT_REMIND_DAYS_BY_TIER });
   const [tierProspects, setTierProspects] = React.useState<Record<Tier, TierProspect[]>>({ A: [], B: [], C: [] });
   const [rosterCount, setRosterCount] = React.useState(0);
   const [activityCount, setActivityCount] = React.useState(0);
@@ -115,14 +112,25 @@ export default function HomePage() {
   const [touchBaseToast, setTouchBaseToast] = React.useState<string | null>(null);
   const [regenByDraftId, setRegenByDraftId] = React.useState<Record<string, number>>({});
   const [draftToneByProspect, setDraftToneByProspect] = React.useState<Record<string, EliteToneId>>({});
+  const [momentumPopoverId, setMomentumPopoverId] = React.useState<string | null>(null);
   const messagesEventTypeRef = React.useRef(true);
-  const { isPro, isElite, markPro } = useProStatus();
+  const { isPro, isElite, checked, markPro } = useProStatus();
   const searchParams = useSearchParams();
   const router = useRouter();
 
   React.useEffect(() => {
     setRegenByDraftId(loadRegenMap());
   }, []);
+
+  React.useEffect(() => {
+    const up = searchParams.get("upgrade");
+    if (up !== "1" || !checked) return;
+    if (!isPro) {
+      setPaywallFeature("STACK Pro");
+      setShowPaywall(true);
+    }
+    router.replace("/home", { scroll: false });
+  }, [searchParams, checked, isPro, router]);
 
   React.useEffect(() => {
     const sessionId = searchParams.get("session_id");
@@ -183,6 +191,25 @@ export default function HomePage() {
   }, [undoToast]);
 
   React.useEffect(() => {
+    if (!momentumPopoverId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMomentumPopoverId(null);
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      const root = t.closest("[data-momentum-root]");
+      if (root?.getAttribute("data-momentum-root") === momentumPopoverId) return;
+      setMomentumPopoverId(null);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [momentumPopoverId]);
+
+  React.useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(LOCAL_DISMISSED_KEY);
@@ -229,8 +256,6 @@ export default function HomePage() {
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prospect_id: prospect.id }),
-    }).then(() => {
-      void refetchNarrative();
     });
 
     if (!draftId) return;
@@ -292,8 +317,6 @@ export default function HomePage() {
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prospect_id: toast.prospectId }),
-      }).then(() => {
-        void refetchNarrative();
       });
     } catch {
       setError("Failed to undo dismissal.");
@@ -330,7 +353,7 @@ export default function HomePage() {
             .single(),
           client
             .from("messages")
-            .select("body,created_at,direction")
+            .select("body,created_at,direction,event_type")
             .eq("prospect_id", draft.prospectId)
             .order("created_at", { ascending: false })
             .limit(80),
@@ -348,11 +371,132 @@ export default function HomePage() {
         return;
       }
 
-      const refreshedTier = (prospectRow.tier as Tier) ?? draft.tier;
+      const refreshedTier = coerceTier(prospectRow.tier, coerceTier(draft.tier));
       const msgRows = inboundRows ?? [];
-      const latestAny = msgRows[0];
-      const inboundLatest = msgRows.find((r) => r.direction === "inbound");
       const scheduled = (scheduledRows ?? [])[0];
+
+      const restoreAgg: ThreadAgg = {
+        inbound: 0,
+        outbound: 0,
+        inboundText: 0,
+        inboundNoteCredit: 0,
+        outboundText: 0,
+        noteCount: 0,
+        touchBaseCount: 0,
+        total: 0,
+      };
+      let restoreLastTextOut: string | undefined;
+      let restoreLastOutBody: string | undefined;
+      let restoreLastIn: string | undefined;
+      let restoreLastInBody: string | undefined;
+      let restoreLatestDir: "inbound" | "outbound" | undefined;
+      let restoreLatestAt: string | undefined;
+      const isoMs = (iso: string) => new Date(iso).getTime();
+      for (let i = 0; i < msgRows.length; i++) {
+        const r = msgRows[i];
+        const at = r.created_at as string;
+        const isInbound = String(r.direction ?? "").toLowerCase() === "inbound";
+        const isNote = (r.event_type as string) === "note";
+        const bodyStr = String(r.body ?? "");
+        const isReaction = isReactionMessageBody(bodyStr);
+        restoreAgg.total += 1;
+        if (isInbound) {
+          restoreAgg.inbound += 1;
+          if (!isReaction) restoreAgg.inboundText += 1;
+          if (!isReaction) {
+            if (!restoreLastIn || isoMs(at) > isoMs(restoreLastIn)) {
+              restoreLastIn = at;
+              restoreLastInBody = bodyStr;
+            }
+          }
+        } else {
+          restoreAgg.outbound += 1;
+          if (!isNote && !isReaction) {
+            restoreAgg.outboundText += 1;
+            if (!restoreLastTextOut || isoMs(at) > isoMs(restoreLastTextOut)) {
+              restoreLastTextOut = at;
+              restoreLastOutBody = bodyStr;
+            }
+          }
+          if (bodyStr.includes("Touched base")) restoreAgg.touchBaseCount += 1;
+        }
+        if (isNote) {
+          restoreAgg.noteCount += 1;
+          const add = theirEngagementCreditFromNoteBody(bodyStr);
+          if (add > 0) {
+            restoreAgg.inboundNoteCredit = clampNoteEngagementCredit(
+              restoreAgg.inboundNoteCredit + add
+            );
+          }
+        }
+      }
+      if (restoreLastIn && restoreLastTextOut) {
+        const msIn = isoMs(restoreLastIn);
+        const msOut = isoMs(restoreLastTextOut);
+        if (msIn > msOut) {
+          restoreLatestDir = "inbound";
+          restoreLatestAt = restoreLastIn;
+        } else if (msOut > msIn) {
+          restoreLatestDir = "outbound";
+          restoreLatestAt = restoreLastTextOut;
+        } else {
+          restoreLatestDir = "inbound";
+          restoreLatestAt = restoreLastIn;
+        }
+      } else if (restoreLastIn) {
+        restoreLatestDir = "inbound";
+        restoreLatestAt = restoreLastIn;
+      } else if (restoreLastTextOut) {
+        restoreLatestDir = "outbound";
+        restoreLatestAt = restoreLastTextOut;
+      }
+      const restoreTrail = computeThreadTrailSignals(
+        (msgRows as Array<{ body?: string | null; created_at: string; direction: string; event_type?: string | null; prospect_id?: string }>).map(
+          (r) => ({
+            body: r.body,
+            created_at: r.created_at,
+            direction: String(r.direction ?? ""),
+            prospect_id: String(r.prospect_id ?? draft.prospectId),
+            event_type: r.event_type,
+          })
+        )
+      );
+      const restoreRemind = remindByTierRef.current[refreshedTier];
+      const restoreNow = new Date();
+      const restoreMomentum =
+        restoreAgg.total > 0
+          ? computeThreadMomentum(restoreAgg, refreshedTier, {
+              lastOutboundAt: restoreLastTextOut,
+              remindAfterDays: restoreRemind,
+              now: restoreNow,
+              latestDirection: restoreLatestDir,
+              lastInboundPreview: restoreLastInBody,
+              trailSignals: restoreTrail,
+            })
+          : 0;
+      const restoreMomentumCtx: MomentumContext | undefined =
+        restoreAgg.total > 0
+          ? {
+              tier: refreshedTier,
+              remindAfterDays: restoreRemind,
+              inbound: restoreAgg.inbound,
+              outbound: restoreAgg.outbound,
+              inboundText: restoreAgg.inboundText,
+              inboundNoteCredit: restoreAgg.inboundNoteCredit,
+              outboundText: restoreAgg.outboundText,
+              total: restoreAgg.total,
+              noteCount: restoreAgg.noteCount,
+              touchBaseCount: restoreAgg.touchBaseCount,
+              lastInboundAt: restoreLastIn,
+              lastOutboundAt: restoreLastTextOut,
+              lastInboundPreview: restoreLastInBody,
+              lastOutboundPreview: restoreLastOutBody,
+              latestDirection: restoreLatestDir,
+              latestAt: restoreLatestAt,
+              inboundReactionCount: restoreTrail.inboundReactionCount,
+              outboundRunSinceTheirText: restoreTrail.outboundRunSinceTheirText,
+            }
+          : undefined;
 
       setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
       void fetch("/api/unclear-prospect-briefing", {
@@ -360,8 +504,6 @@ export default function HomePage() {
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prospect_id: draft.prospectId }),
-      }).then(() => {
-        void refetchNarrative();
       });
       setDismissingDraftIds((prev) => {
         const next = { ...prev };
@@ -382,10 +524,13 @@ export default function HomePage() {
             tier: refreshedTier,
             phoneNumber: prospectRow.phone_number ?? undefined,
             vibeNotes: (prospectRow.vibe_notes as string) ?? undefined,
-            lastInboundBody: (inboundLatest?.body as string) ?? undefined,
-            lastActivityAt: (latestAny?.created_at as string) ?? undefined,
+            lastInboundBody: restoreLastInBody,
+            lastOutboundTextBody: restoreLastOutBody,
+            lastActivityAt: (msgRows[0]?.created_at as string) ?? undefined,
             draftId: (scheduled?.id as string) ?? undefined,
             draftText: (scheduled?.draft_text as string) ?? undefined,
+            momentum: restoreMomentum,
+            momentumContext: restoreMomentumCtx,
           },
           ...next[refreshedTier],
         ];
@@ -398,26 +543,6 @@ export default function HomePage() {
       setError("Failed to restore draft.");
     }
   };
-
-  const refetchNarrative = React.useCallback(async () => {
-    setLoadingNarrative(true);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch("/api/daily-narrative", {
-        cache: "no-store",
-        credentials: "same-origin",
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const data = (await res.json()) as { synopsis?: string };
-      setSynopsis(data.synopsis ?? "No activity to summarize yet.");
-    } catch {
-      setSynopsis("No activity to summarize yet.");
-    } finally {
-      setLoadingNarrative(false);
-    }
-  }, []);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -434,7 +559,7 @@ export default function HomePage() {
     }
 
     const loadTierProspects = async () => {
-      const [prospectsRes, messagesRes, draftsRes, dismissedRes] = await Promise.all([
+      const [prospectsRes, messagesRes, draftsRes, dismissedRes, rulesRes] = await Promise.all([
         client.from("prospects").select("id,name,tier,phone_number,vibe_notes"),
         client
           .from("messages")
@@ -448,33 +573,19 @@ export default function HomePage() {
           .eq("status", "dismissed")
           .order("dismissed_at", { ascending: false })
           .limit(50),
+        client.from("tier_rules").select("tier,remind_after_days"),
       ]);
 
-      const latestActivityAt = new Map<string, string>();
-      const latestInbound = new Map<string, { body: string; at: string }>();
-      const threadAgg = new Map<string, ThreadAgg>();
-      const bumpAgg = (pid: string) => {
-        if (!threadAgg.has(pid)) {
-          threadAgg.set(pid, { inbound: 0, outbound: 0, noteCount: 0, touchBaseCount: 0, total: 0 });
-        }
-        return threadAgg.get(pid)!;
-      };
-      for (const row of messagesRes.data ?? []) {
-        const pid = row.prospect_id as string;
-        const agg = bumpAgg(pid);
-        agg.total += 1;
-        if (row.direction === "inbound") agg.inbound += 1;
-        else if (row.direction === "outbound") agg.outbound += 1;
-        if (row.event_type === "note") agg.noteCount += 1;
-        const bodyStr = String(row.body ?? "");
-        if (row.direction === "outbound" && bodyStr.includes("Touched base")) agg.touchBaseCount += 1;
-        if (!latestActivityAt.has(pid)) {
-          latestActivityAt.set(pid, row.created_at as string);
-        }
-        if (row.direction === "inbound" && !latestInbound.has(pid)) {
-          latestInbound.set(pid, { body: (row.body as string) || "", at: row.created_at as string });
-        }
-      }
+      const remindByTier = remindByTierFromRulesRows(rulesRes.data ?? []);
+      remindByTierRef.current = remindByTier;
+
+      const now = new Date();
+      const momentumByProspect = buildProspectMomentumStateMap(
+        prospectsRes.data ?? [],
+        messagesRes.data ?? [],
+        remindByTier,
+        now
+      );
 
       const draftByProspect = new Map<string, { id: string; text: string }>();
       for (const row of draftsRes.data ?? []) {
@@ -488,23 +599,24 @@ export default function HomePage() {
       const edits: Record<string, string> = {};
 
       for (const row of prospectsRes.data ?? []) {
-        const tier = row.tier as Tier;
+        const tier = coerceTier(row.tier);
         if (!result[tier]) continue;
         const pid = String(row.id);
-        const inbound = latestInbound.get(pid);
         const draft = draftByProspect.get(pid);
-        const agg = threadAgg.get(pid);
+        const st = momentumByProspect.get(pid);
         const p: TierProspect = {
           id: pid,
           name: row.name ?? "Unknown",
           tier,
           phoneNumber: row.phone_number ?? undefined,
           vibeNotes: (row.vibe_notes as string) ?? undefined,
-          lastInboundBody: inbound?.body,
-          lastActivityAt: latestActivityAt.get(pid),
+          lastInboundBody: st?.lastInboundBody,
+          lastOutboundTextBody: st?.lastOutboundTextBody,
+          lastActivityAt: st?.lastActivityAt,
           draftId: draft?.id,
           draftText: draft?.text,
-          momentum: agg ? computeThreadMomentum(agg) : 0,
+          momentum: st?.momentum ?? 0,
+          momentumContext: st?.momentumContext,
         };
         result[tier].push(p);
         if (draft) edits[draft.id] = draft.text;
@@ -555,15 +667,19 @@ export default function HomePage() {
       setDraftsEverGenerated(count ?? 0);
     };
 
-    void refetchNarrative();
     loadTierProspects();
     loadActivityCount();
     loadDraftsGenerated();
-  }, [refetchNarrative]);
+  }, []);
 
   const handleTouchedBase = async (prospect: TierProspect, draftSummary?: string) => {
     const client = supabaseRef.current;
     if (!client) return;
+    if (checked && !isPro && activityCount >= FREE_MESSAGE_LOG_CAP) {
+      setPaywallFeature("Unlimited logging");
+      setShowPaywall(true);
+      return;
+    }
     setQuickTouchingId(prospect.id);
     setError(null);
     const insertPayload: Record<string, unknown> = {
@@ -635,7 +751,6 @@ export default function HomePage() {
       });
       setTouchBaseToast("Interaction Logged.");
       window.setTimeout(() => setTouchBaseToast(null), 1000);
-      void refetchNarrative();
     }, 300);
   };
 
@@ -679,6 +794,7 @@ export default function HomePage() {
       const toneStyle = isElite
         ? draftToneByProspect[prospect.id] ?? "balanced"
         : undefined;
+      const youTextedLast = prospect.momentumContext?.latestDirection === "outbound";
       const res = await fetch("/api/generate-response", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -687,7 +803,8 @@ export default function HomePage() {
           tier: prospect.tier,
           name: prospect.name,
           vibeNotes: prospect.vibeNotes || "",
-          incomingText: prospect.lastInboundBody || "",
+          incomingText: youTextedLast ? "" : prospect.lastInboundBody || "",
+          ...(youTextedLast ? { youTextedLast: true } : {}),
           prospectId: prospect.id,
           ...(toneStyle ? { toneStyle } : {}),
         }),
@@ -809,7 +926,17 @@ export default function HomePage() {
   const dismissedProspectIds = new Set(dismissedDrafts.map((d) => d.prospectId));
 
   const tierOrder: Tier[] = ["A", "B", "C"];
-  const tierLabels: Record<Tier, string> = { A: "A Tier", B: "B Tier", C: "C Tier" };
+  const tierLabels: Record<Tier, string> = {
+    A: "Top picks (A)",
+    B: "In the mix (B)",
+    C: "Casual (C)",
+  };
+  const tierPlain: Record<Tier, string> = { A: "Top picks", B: "In the mix", C: "Casual" };
+
+  const aListWaitingOnYou = React.useMemo(
+    () => flattenTierProspects(tierProspects).filter((p) => isAtGhostingRisk(p)).length,
+    [tierProspects]
+  );
 
   return (
     <div className="space-y-3 sm:space-y-8">
@@ -817,13 +944,16 @@ export default function HomePage() {
       <header className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
+          <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
+            Roster + logged texts → AI drafts. Not a calendar or birthday book.
+          </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <Link
             href="/roster"
             className="border border-[var(--rm-border)] px-2.5 py-1 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.4em]"
           >
-            {rosterCount} Prospects
+            {rosterCount} {rosterCount === 1 ? "person" : "people"}
           </Link>
 
           {isPro ? (
@@ -901,10 +1031,10 @@ export default function HomePage() {
       {/* Onboarding step 1: no prospects yet */}
       {!hasProspects ? (
         <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 1 of 3</p>
-          <h2 className="mt-2 text-base font-semibold tracking-wide">Who are you texting right now?</h2>
+          <h2 className="text-base font-semibold tracking-wide">Add who you&apos;re texting</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Add them to your roster. Rank them A, B, or C — the AI uses this to calibrate your tone.
+            Use the <strong className="font-medium text-[var(--rm-text)]">People</strong> tab. Mark who matters
+            most as A and who&apos;s casual as C — the AI matches your tone to that.
           </p>
           <Link
             href="/roster"
@@ -919,10 +1049,10 @@ export default function HomePage() {
       {/* Onboarding step 2: has prospects but no activity */}
       {hasProspects && !hasActivity ? (
         <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">Step 2 of 3</p>
-          <h2 className="mt-2 text-base font-semibold tracking-wide">Drop your last convo</h2>
+          <h2 className="text-base font-semibold tracking-wide">Add something from your texts</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Screenshot your texts. The AI reads them so it knows exactly what to say next.
+            Open <strong className="font-medium text-[var(--rm-text)]">Texts</strong> and either upload a
+            screenshot or type a short note. Without that, the AI is guessing.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
@@ -930,13 +1060,7 @@ export default function HomePage() {
               className="flex items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
             >
               <ImagePlus size={13} strokeWidth={1.25} />
-              Upload Screenshot
-            </Link>
-            <Link
-              href="/inbox"
-              className="flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] hover:text-[var(--rm-text)]"
-            >
-              Log Manually
+              Open Texts tab
             </Link>
           </div>
         </section>
@@ -945,27 +1069,44 @@ export default function HomePage() {
       {/* Onboarding step 3: has activity but hasn't generated a draft yet */}
       {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
         <section className="border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-400/70">Step 3 of 3 · Free</p>
-          <h2 className="mt-2 text-base font-semibold tracking-wide">Get your first AI draft</h2>
+          <h2 className="text-base font-semibold tracking-wide">Try one AI reply (free)</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Tap <span className="text-[var(--rm-text)]">Generate Draft</span> on any card below. Your first one is on us — see exactly what you&apos;ve been missing.
+            Below, tap <span className="text-[var(--rm-text)]">Generate Draft</span> on someone. First one is
+            free.
           </p>
         </section>
       ) : null}
 
-      {/* AI Summary — only show when there's actual data */}
-      {hasProspects && hasActivity ? (
-        <section className="space-y-0.5 py-0.5 sm:space-y-2 sm:py-0">
-          <p className="text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.5em]">AI Summary</p>
-          <p className="text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-sm sm:leading-normal">
-            {loadingNarrative ? "Generating summary..." : synopsis}
+      {hasProspects && hasActivity && aListWaitingOnYou > 0 ? (
+        <div className="rounded-lg border border-amber-500/45 bg-amber-500/10 px-4 py-3 text-sm">
+          <p className="text-amber-50/95">
+            {aListWaitingOnYou === 1
+              ? "Someone on your A-list texted last — you haven’t replied yet. Scroll down to them first."
+              : `${aListWaitingOnYou} people on your A-list texted last — you haven’t replied yet. Scroll down and work through them.`}
           </p>
-        </section>
+          <Link
+            href="#stack-roster-cards"
+            className="mt-2 inline-block text-xs font-medium text-amber-200 underline underline-offset-2"
+          >
+            Jump to the list
+          </Link>
+        </div>
+      ) : null}
+
+      {hasProspects && hasActivity ? (
+        <p className="text-center text-[11px] text-[var(--rm-text-muted)] sm:text-left">
+          <Link
+            href="/metrics"
+            className="text-amber-400/90 underline decoration-amber-500/35 underline-offset-2 transition hover:text-amber-300"
+          >
+            Pulse — roster stats &amp; briefing →
+          </Link>
+        </p>
       ) : null}
 
       {/* Tier sections — only show when there are prospects */}
       {hasProspects ? (
-        <>
+        <div id="stack-roster-cards" className="space-y-3 sm:space-y-6">
           {tierOrder.map((tier) => {
             const visibleProspects = tierProspects[tier].filter((p) => !dismissedProspectIds.has(p.id));
             if (visibleProspects.length === 0) return null;
@@ -983,6 +1124,13 @@ export default function HomePage() {
                     const regenUsed = draftId ? (regenByDraftId[draftId] ?? 0) : 0;
                     const regenBlocked =
                       isPro && !isElite && Boolean(draftId) && regenUsed >= PRO_REGEN_LIMIT;
+                    const youTextedLast = prospect.momentumContext?.latestDirection === "outbound";
+                    const clipCtx = (s: string) => (s.length > 80 ? `${s.slice(0, 80)}…` : s);
+                    const stackQuoteYou =
+                      youTextedLast && Boolean(prospect.lastOutboundTextBody?.trim());
+                    const stackQuoteYouPlain = youTextedLast && !stackQuoteYou;
+                    const stackQuoteThem = !youTextedLast && Boolean(prospect.lastInboundBody?.trim());
+                    const hasStackContextQuote = stackQuoteYou || stackQuoteYouPlain || stackQuoteThem;
 
                     return (
                       <div
@@ -994,16 +1142,56 @@ export default function HomePage() {
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                             <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
-                            <span
-                              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.14em] ${
-                                (prospect.momentum ?? 0) > 0
-                                  ? "border-amber-500/40 text-amber-200/95"
-                                  : "border-[var(--rm-border)] text-[var(--rm-text-muted)]/55"
-                              }`}
-                              title="This person’s thread score — screenshots & log lines make it climb."
-                            >
-                              M·{prospect.momentum ?? 0}
-                            </span>
+                            <div className="relative shrink-0" data-momentum-root={prospect.id}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMomentumPopoverId((id) => (id === prospect.id ? null : prospect.id))
+                                }
+                                className={`flex max-w-[10.5rem] items-center gap-1 rounded-full border px-2 py-1 text-left transition hover:bg-[var(--rm-bg-elevated)] ${
+                                  (prospect.momentum ?? 0) > 0
+                                    ? "border-amber-500/45 text-amber-100/95"
+                                    : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                                }`}
+                                aria-expanded={momentumPopoverId === prospect.id}
+                                aria-haspopup="dialog"
+                                title="Momentum (0–100): how well you’re keeping up on this chat"
+                              >
+                                <Wand2 size={12} strokeWidth={1.5} className="shrink-0 text-amber-400/90" aria-hidden />
+                                <span className="flex min-w-0 flex-col gap-0.5">
+                                  <span className="text-[12px] font-semibold tabular-nums leading-none tracking-tight">
+                                    {prospect.momentum ?? 0}
+                                  </span>
+                                  <span className="line-clamp-2 text-[8px] font-medium leading-snug text-[var(--rm-text-muted)] normal-case tracking-normal">
+                                    {momentumTeaser(
+                                      prospect.name,
+                                      prospect.momentum ?? 0,
+                                      prospect.momentumContext
+                                    )}
+                                  </span>
+                                </span>
+                              </button>
+                              {momentumPopoverId === prospect.id ? (
+                                <div
+                                  role="dialog"
+                                  aria-label={`Momentum for ${prospect.name}`}
+                                  className="absolute right-0 top-[calc(100%+0.35rem)] z-[80] w-[min(19rem,calc(100vw-2.5rem))] border border-amber-500/30 bg-[var(--rm-bg-elevated)] p-3 text-left shadow-xl"
+                                >
+                                  <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-400/95">
+                                    Momentum · {prospect.momentum ?? 0}/100 · {tierPlain[prospect.tier]}
+                                  </p>
+                                  <div className="mt-2 space-y-2.5 text-[11px] leading-snug text-[var(--rm-text-muted)] normal-case tracking-normal">
+                                    {momentumPopoverLines(
+                                      prospect.name,
+                                      prospect.momentum ?? 0,
+                                      prospect.momentumContext
+                                    ).map((para, i) => (
+                                      <p key={i}>{para}</p>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {prospect.lastActivityAt ? (
@@ -1066,9 +1254,20 @@ export default function HomePage() {
 
                         {draftId && currentDraft ? (
                           <>
-                            {prospect.lastInboundBody ? (
+                            {stackQuoteYou ? (
                               <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
-                                &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
+                                <span className="text-slate-600">You · </span>
+                                &ldquo;
+                                {clipCtx(prospect.lastOutboundTextBody!)}
+                                &rdquo;
+                              </p>
+                            ) : stackQuoteYouPlain ? (
+                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
+                                You texted last.
+                              </p>
+                            ) : stackQuoteThem ? (
+                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
+                                &ldquo;{clipCtx(prospect.lastInboundBody!)}&rdquo;
                               </p>
                             ) : null}
                             <div className="mt-2 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:gap-3">
@@ -1150,24 +1349,35 @@ export default function HomePage() {
                           </>
                         ) : (
                           <div className="mt-1.5 space-y-2 sm:mt-2">
-                            {prospect.lastInboundBody ? (
+                            {hasStackContextQuote ? (
                               <div className="flex items-start gap-2">
                                 <p className="min-w-0 flex-1 text-[11px] leading-snug text-slate-500 sm:text-xs sm:leading-normal">
-                                  &ldquo;{prospect.lastInboundBody.length > 80 ? `${prospect.lastInboundBody.slice(0, 80)}…` : prospect.lastInboundBody}&rdquo;
+                                  {stackQuoteYou ? (
+                                    <>
+                                      <span className="text-slate-600">You · </span>
+                                      &ldquo;{clipCtx(prospect.lastOutboundTextBody!)}&rdquo;
+                                    </>
+                                  ) : stackQuoteYouPlain ? (
+                                    "You texted last."
+                                  ) : (
+                                    <>&ldquo;{clipCtx(prospect.lastInboundBody!)}&rdquo;</>
+                                  )}
                                 </p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    window.location.href = prospect.phoneNumber
-                                      ? `sms:${prospect.phoneNumber}`
-                                      : "sms:";
-                                  }}
-                                  className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
-                                  title="Open Messages"
-                                  aria-label="Open Messages"
-                                >
-                                  <MessageSquare size={13} strokeWidth={1.25} />
-                                </button>
+                                {prospect.phoneNumber ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      window.location.href = prospect.phoneNumber
+                                        ? `sms:${prospect.phoneNumber}`
+                                        : "sms:";
+                                    }}
+                                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
+                                    title="Open Messages"
+                                    aria-label="Open Messages"
+                                  >
+                                    <MessageSquare size={13} strokeWidth={1.25} />
+                                  </button>
+                                ) : null}
                               </div>
                             ) : null}
                             <div className="flex flex-wrap items-center gap-2">
@@ -1210,7 +1420,7 @@ export default function HomePage() {
                                   </>
                                 )}
                               </button>
-                              {!prospect.lastInboundBody && prospect.phoneNumber ? (
+                              {!hasStackContextQuote && prospect.phoneNumber ? (
                                 <button
                                   type="button"
                                   onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
@@ -1231,7 +1441,7 @@ export default function HomePage() {
               </section>
             );
           })}
-        </>
+        </div>
       ) : null}
 
       {dismissedDrafts.length > 0 ? (

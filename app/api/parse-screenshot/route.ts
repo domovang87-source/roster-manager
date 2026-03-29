@@ -65,6 +65,7 @@ export async function POST(req: Request) {
             "CRITICAL RULES for determining direction:\n" +
             "- RIGHT-aligned bubbles (blue, green, or colored) = outbound (the user sent it)\n" +
             "- LEFT-aligned bubbles (gray, white, or plain) = inbound (the other person sent it)\n" +
+            "- If bubble colors are subtle (dark mode, custom themes), use horizontal alignment only — a wrong side breaks the app’s “who texted last” logic.\n" +
             "- Reactions/Tapbacks (heart, like, thumbs up/down, laugh, exclamation, question, emoji overlays) are NOT part of the original message text\n" +
             "- If a reaction appears, output it as a separate message event using body format: 'Reacted <emoji_or_label> to: <short quoted message>'\n" +
             "- For reactions, direction is who performed the reaction (e.g., if OTHER person heart-reacted to a RIGHT-side user bubble, that reaction direction is INBOUND)\n" +

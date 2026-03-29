@@ -1,8 +1,10 @@
 "use client";
 
 import React from "react";
+import PaywallModal from "../../../components/PaywallModal";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useSession } from "../../../lib/use-session";
+import { useProStatus } from "../../../lib/use-pro-status";
 
 type Tier = "A" | "B" | "C";
 
@@ -42,6 +44,8 @@ const voicePlaceholders: Record<Tier, string> = {
 export default function LogicLabPage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const { userId } = useSession();
+  const { isPro, checked } = useProStatus();
+  const [showPaywall, setShowPaywall] = React.useState(false);
   const [rules, setRules] = React.useState<Record<Tier, RuleForm>>({ ...defaultRules });
   const [saving, setSaving] = React.useState<Record<Tier, boolean>>({ A: false, B: false, C: false });
   const [saved, setSaved] = React.useState<Record<Tier, boolean>>({ A: false, B: false, C: false });
@@ -100,6 +104,10 @@ export default function LogicLabPage() {
   const saveRule = async (tier: Tier) => {
     const client = supabaseRef.current;
     if (!client) return;
+    if (checked && !isPro) {
+      setShowPaywall(true);
+      return;
+    }
     setSaving((prev) => ({ ...prev, [tier]: true }));
     setError(null);
 
@@ -130,17 +138,30 @@ export default function LogicLabPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-          Tier rules
+          Style
         </p>
-        <h1 className="text-3xl font-semibold tracking-wide">AI & Reminders</h1>
+        <h1 className="text-3xl font-semibold tracking-wide">How the AI talks</h1>
         <p className="text-sm text-[var(--rm-text-muted)]">
-          Set how drafts sound per tier and how often you want to stay in touch.
+          Per person-type (A / B / C): tone of drafts and how often you want a nudge to check in.
         </p>
       </header>
 
       {error ? (
         <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 text-sm text-[var(--rm-text-muted)]">
           {error}
+        </div>
+      ) : null}
+
+      {checked && !isPro ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-emerald-500/35 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100/95">
+          <span>Saving cadence &amp; voice to the cloud is a Pro feature — preview below, then upgrade to lock it in.</span>
+          <button
+            type="button"
+            onClick={() => setShowPaywall(true)}
+            className="shrink-0 border border-emerald-400/50 px-3 py-1.5 text-[10px] uppercase tracking-[0.25em] transition hover:bg-emerald-400/15"
+          >
+            See plans
+          </button>
         </div>
       ) : null}
 
@@ -215,6 +236,12 @@ export default function LogicLabPage() {
           manage subscription
         </a>
       </div>
+
+      <PaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        feature="Style"
+      />
     </div>
   );
 }

@@ -1,0 +1,301 @@
+import type { MomentumContext } from "./momentum-insight";
+import type { PortfolioProspect } from "./portfolio-stats";
+import { DEFAULT_REMIND_DAYS_BY_TIER, normalizeRemindDays, type RulesTier } from "./momentum-check-in";
+import { clampNoteEngagementCredit, theirEngagementCreditFromNoteBody } from "./note-engagement-signal";
+import { computeThreadMomentum100 } from "./thread-momentum-score";
+
+export type Tier = "A" | "B" | "C";
+
+export function coerceTier(value: unknown, fallback: Tier = "B"): Tier {
+  return value === "A" || value === "B" || value === "C" ? value : fallback;
+}
+
+export type ThreadAgg = {
+  inbound: number;
+  outbound: number;
+  /** Inbound rows excluding reaction/tapback lines — balance + chattiness heuristics. */
+  inboundText: number;
+  /** Virtual inbound weight from notes (voice memo, calls) — balance only, capped. */
+  inboundNoteCredit: number;
+  /** Outbound rows that are not private notes or reactions — balance + “who texted last”. */
+  outboundText: number;
+  noteCount: number;
+  touchBaseCount: number;
+  total: number;
+};
+
+export function isReactionMessageBody(body: string): boolean {
+  return body.trim().toLowerCase().startsWith("reacted ");
+}
+
+function isoMs(iso: string): number {
+  return new Date(iso).getTime();
+}
+
+/** Consecutive outbound texts since their last substantive inbound (tapbacks skipped). */
+export function computeThreadTrailSignals(rows: MessageRowLike[]): {
+  inboundReactionCount: number;
+  outboundRunSinceTheirText: number;
+} {
+  let inboundReactionCount = 0;
+  for (const row of rows) {
+    if (String(row.direction ?? "").toLowerCase() !== "inbound") continue;
+    if (isReactionMessageBody(String(row.body ?? ""))) inboundReactionCount += 1;
+  }
+  const sorted = [...rows].sort((a, b) => isoMs(b.created_at) - isoMs(a.created_at));
+  let outboundRunSinceTheirText = 0;
+  for (const row of sorted) {
+    const isNote = row.event_type === "note";
+    const bodyStr = String(row.body ?? "");
+    const isReaction = isReactionMessageBody(bodyStr);
+    const isInbound = String(row.direction ?? "").toLowerCase() === "inbound";
+    if (isNote) continue;
+    if (isInbound && isReaction) continue;
+    if (isInbound && !isReaction) break;
+    if (!isInbound && !isReaction) outboundRunSinceTheirText += 1;
+  }
+  return { inboundReactionCount, outboundRunSinceTheirText };
+}
+
+export type MomentumComputeOpts = {
+  lastOutboundAt?: string;
+  remindAfterDays: number;
+  now: Date;
+  latestDirection?: "inbound" | "outbound";
+  lastInboundPreview?: string;
+  /** Tapback count + outbound streak since their last real line — feeds score + “Why”. */
+  trailSignals?: { inboundReactionCount: number; outboundRunSinceTheirText: number };
+};
+
+/** 0–100: start at “you’re fine,” subtract only for overdue cadence, thin threads, or a cryptic last line from them. */
+export function computeThreadMomentum(a: ThreadAgg, tier: Tier, opts: MomentumComputeOpts): number {
+  if (a.total === 0) return 0;
+  return computeThreadMomentum100(
+    tier,
+    a.total,
+    a.inboundText,
+    a.inboundNoteCredit,
+    a.outboundText,
+    a.noteCount,
+    a.touchBaseCount,
+    opts.lastOutboundAt,
+    opts.remindAfterDays,
+    opts.now,
+    opts.latestDirection,
+    opts.lastInboundPreview,
+    opts.trailSignals
+  );
+}
+
+export type ProspectRowLike = {
+  id: string;
+  name?: string | null;
+  tier?: unknown;
+  phone_number?: string | null;
+  vibe_notes?: string | null;
+};
+
+export type MessageRowLike = {
+  body?: string | null;
+  created_at: string;
+  direction: string;
+  prospect_id: string;
+  event_type?: string | null;
+};
+
+export type RosterProspectMomentumState = {
+  momentum: number;
+  momentumContext?: MomentumContext;
+  lastInboundBody?: string;
+  /** Body of the most recent outbound text (non-note, non-reaction), for honest stack context when you texted last. */
+  lastOutboundTextBody?: string;
+  lastActivityAt?: string;
+};
+
+/**
+ * Aggregates messages and returns per-prospect momentum (matches Home `loadTierProspects` math).
+ */
+export function buildProspectMomentumStateMap(
+  prospectRows: ProspectRowLike[],
+  messageRows: MessageRowLike[],
+  remindByTier: Record<Tier, number>,
+  now: Date
+): Map<string, RosterProspectMomentumState> {
+  const latestActivityAt = new Map<string, string>();
+  const latestInbound = new Map<string, { body: string; at: string }>();
+  const threadAgg = new Map<string, ThreadAgg>();
+  const bumpAgg = (pid: string) => {
+    if (!threadAgg.has(pid)) {
+      threadAgg.set(pid, {
+        inbound: 0,
+        outbound: 0,
+        inboundText: 0,
+        inboundNoteCredit: 0,
+        outboundText: 0,
+        noteCount: 0,
+        touchBaseCount: 0,
+        total: 0,
+      });
+    }
+    return threadAgg.get(pid)!;
+  };
+
+  const latestOutboundText = new Map<string, { body: string; at: string }>();
+  const rowsByProspect = new Map<string, MessageRowLike[]>();
+
+  for (const row of messageRows) {
+    const pid = row.prospect_id as string;
+    if (!rowsByProspect.has(pid)) rowsByProspect.set(pid, []);
+    rowsByProspect.get(pid)!.push(row);
+    const agg = bumpAgg(pid);
+    const isNote = row.event_type === "note";
+    const bodyStr = String(row.body ?? "");
+    const isReaction = isReactionMessageBody(bodyStr);
+    const isInbound = String(row.direction ?? "").toLowerCase() === "inbound";
+    agg.total += 1;
+    if (isInbound) {
+      agg.inbound += 1;
+      if (!isReaction) agg.inboundText += 1;
+    } else {
+      agg.outbound += 1;
+      if (!isNote && !isReaction) agg.outboundText += 1;
+    }
+    if (isNote) {
+      agg.noteCount += 1;
+      const add = theirEngagementCreditFromNoteBody(bodyStr);
+      if (add > 0) {
+        agg.inboundNoteCredit = clampNoteEngagementCredit(agg.inboundNoteCredit + add);
+      }
+    }
+    if (!isInbound && bodyStr.includes("Touched base")) agg.touchBaseCount += 1;
+    if (!latestActivityAt.has(pid)) {
+      latestActivityAt.set(pid, row.created_at as string);
+    }
+    const at = row.created_at as string;
+    if (isInbound && !isReaction) {
+      const prev = latestInbound.get(pid);
+      if (!prev || isoMs(at) > isoMs(prev.at)) {
+        latestInbound.set(pid, { body: bodyStr, at });
+      }
+    }
+    if (!isInbound && !isNote && !isReaction) {
+      const prev = latestOutboundText.get(pid);
+      if (!prev || isoMs(at) > isoMs(prev.at)) {
+        latestOutboundText.set(pid, { body: bodyStr, at });
+      }
+    }
+  }
+
+  const out = new Map<string, RosterProspectMomentumState>();
+  for (const row of prospectRows) {
+    const tier = coerceTier(row.tier);
+    const pid = String(row.id);
+    const inbound = latestInbound.get(pid);
+    const agg = threadAgg.get(pid);
+    const remindDays = remindByTier[tier];
+    const lastOut = latestOutboundText.get(pid);
+    const lastTextOut = lastOut?.at;
+    const tIn = inbound?.at;
+    let latestDirection: "inbound" | "outbound" | undefined;
+    let latestAt: string | undefined;
+    if (tIn && lastTextOut) {
+      const msIn = isoMs(tIn);
+      const msOut = isoMs(lastTextOut);
+      if (msIn > msOut) {
+        latestDirection = "inbound";
+        latestAt = tIn;
+      } else if (msOut > msIn) {
+        latestDirection = "outbound";
+        latestAt = lastTextOut;
+      } else {
+        // Same timestamp (batch edge case): treat as them having the thread if both exist.
+        latestDirection = "inbound";
+        latestAt = tIn;
+      }
+    } else if (tIn) {
+      latestDirection = "inbound";
+      latestAt = tIn;
+    } else if (lastTextOut) {
+      latestDirection = "outbound";
+      latestAt = lastTextOut;
+    }
+    const trailRows = rowsByProspect.get(pid) ?? [];
+    const trailSignals = computeThreadTrailSignals(trailRows);
+    const momentumContext: MomentumContext | undefined = agg
+      ? {
+          tier,
+          remindAfterDays: remindDays,
+          inbound: agg.inbound,
+          outbound: agg.outbound,
+          inboundText: agg.inboundText,
+          inboundNoteCredit: agg.inboundNoteCredit,
+          outboundText: agg.outboundText,
+          total: agg.total,
+          noteCount: agg.noteCount,
+          touchBaseCount: agg.touchBaseCount,
+          lastInboundAt: inbound?.at,
+          lastOutboundAt: lastTextOut,
+          lastInboundPreview: inbound?.body,
+          lastOutboundPreview: lastOut?.body,
+          latestDirection,
+          latestAt,
+          inboundReactionCount: trailSignals.inboundReactionCount,
+          outboundRunSinceTheirText: trailSignals.outboundRunSinceTheirText,
+        }
+      : undefined;
+    const momentum = agg
+      ? computeThreadMomentum(agg, tier, {
+          lastOutboundAt: lastTextOut,
+          remindAfterDays: remindDays,
+          now,
+          latestDirection,
+          lastInboundPreview: inbound?.body,
+          trailSignals,
+        })
+      : 0;
+    out.set(pid, {
+      momentum,
+      momentumContext,
+      lastInboundBody: inbound?.body,
+      lastOutboundTextBody: lastOut?.body,
+      lastActivityAt: latestActivityAt.get(pid),
+    });
+  }
+  return out;
+}
+
+export function remindByTierFromRulesRows(
+  rows: Array<{ tier?: string | null; remind_after_days?: unknown }> | null | undefined
+): Record<Tier, number> {
+  const remindByTier: Record<Tier, number> = {
+    A: DEFAULT_REMIND_DAYS_BY_TIER.A,
+    B: DEFAULT_REMIND_DAYS_BY_TIER.B,
+    C: DEFAULT_REMIND_DAYS_BY_TIER.C,
+  };
+  for (const row of rows ?? []) {
+    const t = coerceTier(row.tier);
+    remindByTier[t] = normalizeRemindDays(row.remind_after_days, DEFAULT_REMIND_DAYS_BY_TIER[t]);
+  }
+  return remindByTier;
+}
+
+export function buildPortfolioProspectsForAudit(
+  prospectRows: ProspectRowLike[],
+  messageRows: MessageRowLike[],
+  remindByTier: Record<Tier, number>,
+  now: Date
+): PortfolioProspect[] {
+  const map = buildProspectMomentumStateMap(prospectRows, messageRows, remindByTier, now);
+  return prospectRows.map((row) => {
+    const pid = String(row.id);
+    const tier = coerceTier(row.tier);
+    const st = map.get(pid);
+    return {
+      id: pid,
+      name: row.name ?? "Unknown",
+      tier,
+      momentum: st?.momentum ?? 0,
+      momentumContext: st?.momentumContext,
+    };
+  });
+}

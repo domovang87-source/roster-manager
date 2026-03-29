@@ -60,6 +60,42 @@ export async function POST(req: Request) {
       return NextResponse.json({ pro: false, elite: false, reason: "not_complete" });
     }
 
+    const refId = session.client_reference_id ?? undefined;
+    const metaId =
+      typeof session.metadata?.supabase_user_id === "string"
+        ? session.metadata.supabase_user_id
+        : undefined;
+    if (refId && refId !== user.id) {
+      return NextResponse.json(
+        {
+          pro: false,
+          elite: false,
+          error: "This checkout belongs to another account. Sign in with the one you used to pay.",
+        },
+        { status: 403 }
+      );
+    }
+    if (metaId && metaId !== user.id) {
+      return NextResponse.json(
+        {
+          pro: false,
+          elite: false,
+          error: "This checkout belongs to another account. Sign in with the one you used to pay.",
+        },
+        { status: 403 }
+      );
+    }
+    if (!refId && !metaId) {
+      return NextResponse.json(
+        {
+          pro: false,
+          elite: false,
+          error: "This checkout session cannot be tied to an account. Contact support if you were charged.",
+        },
+        { status: 400 }
+      );
+    }
+
     const planTier = session.metadata?.tier === "elite" ? "elite" : "pro";
 
     const { error: upsertError } = await supabase.from("subscriptions").upsert(

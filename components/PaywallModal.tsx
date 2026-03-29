@@ -10,11 +10,11 @@ type Props = {
 };
 
 const PRO_PERKS = [
+  "Unlimited text logs + screenshots (no 5-message cap)",
   "Unlimited AI reply drafts in your voice",
   "Up to 5 regenerations per draft (standard tier voice)",
-  "Never ghost — smart follow-up reminders",
-  "Unlimited roster — no cap",
-  "Tone personalization by tier (A / B / C) — no style picker",
+  "Daily AI brief + full portfolio read",
+  "Unlimited roster · save Logic Lab cadence & voice per tier",
 ];
 
 const ELITE_PERKS = [
@@ -85,8 +85,11 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
           {feature ? `${feature} · paid plans` : "STACK · Pro & Elite"}
         </p>
         <h2 className="mt-1.5 text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
-          Your second brain<br />for dating.
+          Stop leaving money<br />on the table.
         </h2>
+        <p className="mt-2 text-sm text-[var(--rm-text-muted)]">
+          Pro unlocks unlimited logging, drafts, and the daily brief — checkout takes under a minute.
+        </p>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
