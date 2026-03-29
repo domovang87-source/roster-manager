@@ -7,6 +7,9 @@ import {
   parseDatetimeLocalToUtcIso,
   toLocalDatetimeInputValue,
 } from "../../../lib/datetime-local";
+import { onScreenshotImportedForProspect } from "../../../lib/draft-outcome-analytics";
+import { guessProspectIdFromFilename } from "../../../lib/guess-prospect-from-filename";
+import { guessProspectIdFromThreadHint } from "../../../lib/match-prospect-from-thread-hint";
 
 type EventType = "text" | "date" | "hangout" | "call" | "note";
 
@@ -28,7 +31,46 @@ type LogEntry = {
   direction: "inbound" | "outbound";
   body: string;
   createdAt: string;
+  /** Same UUID for all bubbles from one screenshot save — delete batch in one action. */
+  importBatchId?: string | null;
 };
+
+type LogDisplayGroup =
+  | { kind: "single"; entry: LogEntry }
+  | { kind: "batch"; batchId: string; entries: LogEntry[] };
+
+function groupLogEntriesForDisplay(entries: LogEntry[]): LogDisplayGroup[] {
+  const byBatch = new Map<string, LogEntry[]>();
+  const singles: LogEntry[] = [];
+  for (const e of entries) {
+    const b = e.importBatchId;
+    if (b) {
+      const list = byBatch.get(b) ?? [];
+      list.push(e);
+      byBatch.set(b, list);
+    } else {
+      singles.push(e);
+    }
+  }
+  for (const arr of byBatch.values()) {
+    arr.sort((a, x) => new Date(x.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  const groups: LogDisplayGroup[] = [];
+  for (const [batchId, ents] of byBatch) {
+    if (ents.length > 0) groups.push({ kind: "batch", batchId, entries: ents });
+  }
+  for (const e of singles) {
+    groups.push({ kind: "single", entry: e });
+  }
+  groups.sort((a, b) => {
+    const maxTs = (g: LogDisplayGroup) =>
+      g.kind === "batch"
+        ? Math.max(...g.entries.map((x) => new Date(x.createdAt).getTime()))
+        : new Date(g.entry.createdAt).getTime();
+    return maxTs(b) - maxTs(a);
+  });
+  return groups;
+}
 
 type ParsedMessage = { direction: string; body: string };
 
@@ -40,6 +82,7 @@ export default function ActivityLogPage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [hasEventTypeCol, setHasEventTypeCol] = React.useState(true);
+  const [hasImportBatchCol, setHasImportBatchCol] = React.useState(true);
   const [entries, setEntries] = React.useState<LogEntry[]>([]);
   const [prospects, setProspects] = React.useState<Prospect[]>([]);
   const [error, setError] = React.useState<string | null>(null);
@@ -62,65 +105,108 @@ export default function ActivityLogPage() {
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [deletingBatchId, setDeletingBatchId] = React.useState<string | null>(null);
 
   // Screenshot modal
   const [isScreenshotOpen, setIsScreenshotOpen] = React.useState(false);
   const [screenshotProspectId, setScreenshotProspectId] = React.useState("");
-  const [screenshotWhen, setScreenshotWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [screenshotPreview, setScreenshotPreview] = React.useState<string | null>(null);
   const [screenshotFile, setScreenshotFile] = React.useState<File | null>(null);
+  const [screenshotFilenameLabel, setScreenshotFilenameLabel] = React.useState("");
   const [isParsing, setIsParsing] = React.useState(false);
   const [parsedMessages, setParsedMessages] = React.useState<ParsedMessage[]>([]);
-  const [selectedParsedIdx, setSelectedParsedIdx] = React.useState<Set<number>>(new Set());
   const [isSavingScreenshot, setIsSavingScreenshot] = React.useState(false);
   const [screenshotError, setScreenshotError] = React.useState<string | null>(null);
+  const [screenshotThreadTitle, setScreenshotThreadTitle] = React.useState<string | null>(null);
+  const [screenshotMatchSource, setScreenshotMatchSource] = React.useState<"thread" | "filename" | null>(null);
+  const [importToast, setImportToast] = React.useState<string | null>(null);
 
   const loadEntries = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
-    const { data, error: queryError } = await client
+    const mapRow = (
+      row: Record<string, unknown>,
+      eventFallback: boolean,
+      batchFallback: boolean
+    ): LogEntry => {
+      const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
+      return {
+        id: row.id as string,
+        prospectId: row.prospect_id as string,
+        prospectName: (prospect?.name as string) || "Unknown",
+        eventType: (eventFallback ? "text" : (row.event_type as EventType)) || "text",
+        direction: (row.direction as "inbound" | "outbound") || "outbound",
+        body: (row.body as string) || "",
+        createdAt: row.created_at as string,
+        importBatchId: batchFallback ? null : ((row.import_batch_id as string | null) ?? null),
+      };
+    };
+
+    const buildSelect = (eventCol: boolean, batchCol: boolean) => {
+      const cols = ["id", "body", "direction"];
+      if (eventCol) cols.push("event_type");
+      if (batchCol) cols.push("import_batch_id");
+      cols.push("created_at", "prospect_id", "prospects(name)");
+      return cols.join(",");
+    };
+
+    let eventCol = hasEventTypeCol;
+    let batchCol = hasImportBatchCol;
+
+    let { data, error: queryError } = await client
       .from("messages")
-      .select("id,body,direction,event_type,created_at,prospect_id,prospects(name)")
+      .select(buildSelect(eventCol, batchCol))
       .order("created_at", { ascending: false })
       .limit(200);
 
-    if (queryError && queryError.message?.includes("event_type")) {
-      setHasEventTypeCol(false);
-      const { data: fallbackData } = await client
+    if (
+      queryError &&
+      batchCol &&
+      (queryError.message?.includes("import_batch_id") ||
+        (queryError.message?.includes("column") && queryError.message?.toLowerCase().includes("import_batch")))
+    ) {
+      batchCol = false;
+      setHasImportBatchCol(false);
+      ({ data, error: queryError } = await client
         .from("messages")
-        .select("id,body,direction,created_at,prospect_id,prospects(name)")
+        .select(buildSelect(eventCol, batchCol))
         .order("created_at", { ascending: false })
-        .limit(200);
-      setEntries(
-        (fallbackData ?? []).map((row) => {
-          const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
-          return {
-            id: row.id as string,
-            prospectId: row.prospect_id as string,
-            prospectName: (prospect?.name as string) || "Unknown",
-            eventType: "text" as EventType,
-            direction: (row.direction as "inbound" | "outbound") || "outbound",
-            body: (row.body as string) || "",
-            createdAt: row.created_at as string,
-          };
-        })
-      );
+        .limit(200));
+    }
+
+    if (queryError && eventCol && queryError.message?.includes("event_type")) {
+      eventCol = false;
+      setHasEventTypeCol(false);
+      ({ data, error: queryError } = await client
+        .from("messages")
+        .select(buildSelect(eventCol, batchCol))
+        .order("created_at", { ascending: false })
+        .limit(200));
+      if (
+        queryError &&
+        batchCol &&
+        (queryError.message?.includes("import_batch_id") ||
+          (queryError.message?.includes("column") && queryError.message?.toLowerCase().includes("import_batch")))
+      ) {
+        batchCol = false;
+        setHasImportBatchCol(false);
+        ({ data, error: queryError } = await client
+          .from("messages")
+          .select(buildSelect(eventCol, batchCol))
+          .order("created_at", { ascending: false })
+          .limit(200));
+      }
+    }
+
+    if (queryError) {
+      setEntries([]);
       return;
     }
 
     setEntries(
-      (data ?? []).map((row) => {
-        const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
-        return {
-          id: row.id as string,
-          prospectId: row.prospect_id as string,
-          prospectName: (prospect?.name as string) || "Unknown",
-          eventType: (row.event_type as EventType) || "text",
-          direction: (row.direction as "inbound" | "outbound") || "outbound",
-          body: (row.body as string) || "",
-          createdAt: row.created_at as string,
-        };
-      })
+      (data ?? []).map((row) =>
+        mapRow(row as unknown as Record<string, unknown>, !eventCol, !batchCol)
+      )
     );
-  }, []);
+  }, [hasEventTypeCol, hasImportBatchCol]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -167,6 +253,9 @@ export default function ActivityLogPage() {
         if (retryError) { setLogError(retryError.message); setIsSending(false); return; }
       } else { setLogError(insertError.message); setIsSending(false); return; }
     }
+    const who = prospects.find((p) => p.id === selectedProspectId)?.name ?? "them";
+    setImportToast(`Logged · ${who}'s momentum updated`);
+    window.setTimeout(() => setImportToast(null), 5000);
     setLogBody("");
     setLogWhen(toLocalDatetimeInputValue(new Date()));
     setIsLogOpen(false);
@@ -175,86 +264,131 @@ export default function ActivityLogPage() {
   };
 
   // Screenshot handlers
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setScreenshotFile(file);
-    setScreenshotPreview(URL.createObjectURL(file));
-    setParsedMessages([]);
-    setSelectedParsedIdx(new Set());
-    setScreenshotError(null);
-  };
-
-  const handleParseScreenshot = async () => {
-    if (!screenshotFile) return;
+  const runScreenshotParse = React.useCallback(async (file: File) => {
     setIsParsing(true);
     setScreenshotError(null);
+    setParsedMessages([]);
 
     const formData = new FormData();
-    formData.append("image", screenshotFile);
+    formData.append("image", file);
 
     try {
       const res = await fetch("/api/parse-screenshot", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok || data.error) {
         setScreenshotError(data.error ?? "Failed to read screenshot");
-        setIsParsing(false);
+        setScreenshotThreadTitle(null);
+        setScreenshotMatchSource(null);
         return;
       }
-      setParsedMessages(data.messages ?? []);
-      setSelectedParsedIdx(new Set((data.messages ?? []).map((_: ParsedMessage, i: number) => i)));
-      if ((data.messages ?? []).length === 0) {
+      const msgs = (data.messages ?? []) as ParsedMessage[];
+      const threadTitle =
+        typeof data.threadTitle === "string" && data.threadTitle.trim()
+          ? data.threadTitle.trim()
+          : null;
+      setScreenshotThreadTitle(threadTitle);
+
+      setParsedMessages(msgs);
+      if (msgs.length === 0) {
         setScreenshotError("Couldn't find any messages in this screenshot. Try a clearer one.");
+        setScreenshotMatchSource(null);
+        return;
       }
+
+      const fromThread = guessProspectIdFromThreadHint(threadTitle, prospects);
+      const fromFile = guessProspectIdFromFilename(file.name, prospects);
+      let source: "thread" | "filename" | null = null;
+      let autoId = "";
+      if (fromThread) {
+        autoId = fromThread;
+        source = "thread";
+      } else if (fromFile) {
+        autoId = fromFile;
+        source = "filename";
+      }
+      setScreenshotMatchSource(source);
+      setScreenshotProspectId((prev) => autoId || prev || "");
     } catch {
       setScreenshotError("Failed to analyze screenshot");
+      setScreenshotThreadTitle(null);
+      setScreenshotMatchSource(null);
     } finally {
       setIsParsing(false);
     }
+  }, [prospects]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScreenshotFile(file);
+    setScreenshotPreview(URL.createObjectURL(file));
+    setParsedMessages([]);
+    setScreenshotError(null);
+    setScreenshotThreadTitle(null);
+    setScreenshotMatchSource(null);
+    setScreenshotFilenameLabel(file.name);
+    void runScreenshotParse(file);
   };
 
   const handleSaveScreenshotMessages = async () => {
     const client = supabaseRef.current;
     if (!client || !screenshotProspectId || parsedMessages.length === 0) return;
-    const selectedMessages = parsedMessages.filter((_, i) => selectedParsedIdx.has(i));
-    if (selectedMessages.length === 0) {
-      setScreenshotError("Pick at least one parsed message to save.");
-      return;
-    }
 
     setIsSavingScreenshot(true);
     setScreenshotError(null);
 
     const nowMs = Date.now();
-    const parsedIso = parseDatetimeLocalToUtcIso(screenshotWhen);
-    const parsedMs = parsedIso ? new Date(parsedIso).getTime() : nowMs;
-    const baseMs = Math.min(parsedMs, nowMs);
-    const rows = selectedMessages.map((msg, idx) => {
-      const row: Record<string, unknown> = {
-        prospect_id: screenshotProspectId,
-        direction: msg.direction === "inbound" ? "inbound" : "outbound",
-        body: msg.body,
-        // Keep relative ordering while letting user backdate screenshot imports.
-        created_at: new Date(baseMs + idx * 60_000).toISOString(),
-      };
-      if (hasEventTypeCol) row.event_type = "text";
-      return row;
-    });
+    const baseMs = nowMs;
+    const importBatchId = crypto.randomUUID();
 
-    const { error: insertError } = await client.from("messages").insert(rows);
+    const buildRows = (includeBatch: boolean) =>
+      parsedMessages.map((msg, idx) => {
+        const row: Record<string, unknown> = {
+          prospect_id: screenshotProspectId,
+          direction: msg.direction === "inbound" ? "inbound" : "outbound",
+          body: msg.body,
+          created_at: new Date(baseMs + idx * 60_000).toISOString(),
+        };
+        if (hasEventTypeCol) row.event_type = "text";
+        if (includeBatch && hasImportBatchCol) row.import_batch_id = importBatchId;
+        return row;
+      });
+
+    let rows = buildRows(true);
+    let { error: insertError } = await client.from("messages").insert(rows);
+    if (
+      insertError &&
+      hasImportBatchCol &&
+      (insertError.message?.includes("import_batch_id") ||
+        (insertError.message?.includes("column") &&
+          insertError.message?.toLowerCase().includes("import_batch")))
+    ) {
+      setHasImportBatchCol(false);
+      rows = buildRows(false);
+      ({ error: insertError } = await client.from("messages").insert(rows));
+    }
     if (insertError) {
       setScreenshotError(insertError.message);
       setIsSavingScreenshot(false);
       return;
     }
 
+    onScreenshotImportedForProspect(screenshotProspectId);
+
+    const who = prospects.find((p) => p.id === screenshotProspectId)?.name ?? "them";
+    setImportToast(
+      `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s momentum updated`
+    );
+    window.setTimeout(() => setImportToast(null), 5000);
+
     setIsScreenshotOpen(false);
     setScreenshotFile(null);
     setScreenshotPreview(null);
     setParsedMessages([]);
-    setSelectedParsedIdx(new Set());
     setScreenshotProspectId("");
-    setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
+    setScreenshotFilenameLabel("");
+    setScreenshotThreadTitle(null);
+    setScreenshotMatchSource(null);
     setIsSavingScreenshot(false);
     await loadEntries(client);
   };
@@ -264,10 +398,11 @@ export default function ActivityLogPage() {
     setScreenshotFile(null);
     setScreenshotPreview(null);
     setParsedMessages([]);
-    setSelectedParsedIdx(new Set());
     setScreenshotError(null);
     setScreenshotProspectId("");
-    setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
+    setScreenshotFilenameLabel("");
+    setScreenshotThreadTitle(null);
+    setScreenshotMatchSource(null);
   };
 
   const handleOpenEditEntry = (entry: LogEntry) => {
@@ -308,6 +443,35 @@ export default function ActivityLogPage() {
     await loadEntries(client);
   };
 
+  const handleDeleteImportBatch = async (batchId: string, prospectName: string, count: number) => {
+    const client = supabaseRef.current;
+    if (!client) return;
+    if (!hasImportBatchCol) {
+      setError("Batch delete needs DB column import_batch_id — run messages-import-batch-migration.sql in Supabase.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete this whole screenshot import for ${prospectName}? (${count} lines — one tap undo isn’t available.)`
+      )
+    ) {
+      return;
+    }
+    setDeletingBatchId(batchId);
+    setError(null);
+    const { error: delErr } = await client.from("messages").delete().eq("import_batch_id", batchId);
+    setDeletingBatchId(null);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    if (editingEntryId) {
+      setIsEditOpen(false);
+      setEditingEntryId(null);
+    }
+    await loadEntries(client);
+  };
+
   const handleDeleteEntry = async (entry: LogEntry) => {
     const client = supabaseRef.current;
     if (!client) return;
@@ -332,13 +496,18 @@ export default function ActivityLogPage() {
     ? entries.filter((e) => e.prospectId === filterProspectId)
     : entries;
 
+  const displayGroups = React.useMemo(
+    () => groupLogEntriesForDisplay(filtered),
+    [filtered]
+  );
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-wide">Activity Log</h1>
           <p className="text-sm text-[var(--rm-text-muted)]">
-            Track interactions. The AI reads this when drafting texts.
+            Quick screenshot import and logging — each thread’s momentum on Home grows when you keep this fresh.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -349,8 +518,11 @@ export default function ActivityLogPage() {
               setParsedMessages([]);
               setScreenshotFile(null);
               setScreenshotPreview(null);
-              setScreenshotProspectId(filterProspectId);
-              setScreenshotWhen(toLocalDatetimeInputValue(new Date()));
+              setScreenshotFilenameLabel("");
+              setScreenshotProspectId(
+                filterProspectId ||
+                  (prospects.length === 1 ? prospects[0].id : "")
+              );
               setIsScreenshotOpen(true);
             }}
             className="flex items-center gap-2 border border-blue-400/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
@@ -362,8 +534,11 @@ export default function ActivityLogPage() {
             type="button"
             onClick={() => {
               setLogWhen(toLocalDatetimeInputValue(new Date()));
+              setLogType("text");
               setLogError(null);
-              setSelectedProspectId(filterProspectId);
+              setSelectedProspectId(
+                filterProspectId || (prospects.length === 1 ? prospects[0].id : "")
+              );
               setIsLogOpen(true);
             }}
             className="flex items-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
@@ -380,9 +555,21 @@ export default function ActivityLogPage() {
         </div>
       ) : null}
 
+      {importToast ? (
+        <div className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,24rem)] -translate-x-1/2 border border-emerald-500/40 bg-[var(--rm-bg-elevated)] px-4 py-3 text-center text-sm text-emerald-100/95 shadow-lg">
+          {importToast}
+        </div>
+      ) : null}
+
       {!hasEventTypeCol ? (
         <div className="border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
           Run <code className="font-mono text-xs">activity-log-migration.sql</code> in your Supabase SQL Editor to enable event types.
+        </div>
+      ) : null}
+
+      {!hasImportBatchCol ? (
+        <div className="border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
+          Run <code className="font-mono text-xs">messages-import-batch-migration.sql</code> to group screenshot imports and delete a whole batch at once.
         </div>
       ) : null}
 
@@ -418,58 +605,150 @@ export default function ActivityLogPage() {
             </p>
           </div>
         ) : (
-          filtered.map((entry) => {
-            const reaction = isReactionBody(entry.body);
-            const config = reaction
-              ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
-              : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
-            const Icon = config.icon;
+          displayGroups.map((group) => {
+            if (group.kind === "single") {
+              const entry = group.entry;
+              const reaction = isReactionBody(entry.body);
+              const config = reaction
+                ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
+                : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
+              const Icon = config.icon;
+              return (
+                <div
+                  key={entry.id}
+                  className="flex items-start gap-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3"
+                >
+                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border ${config.colorClass}`}>
+                    <Icon size={14} strokeWidth={1.25} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">{entry.prospectName}</p>
+                        <span className={`text-[10px] uppercase tracking-[0.2em] ${config.colorClass.split(" ")[0]}`}>
+                          {config.label}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <span className="mr-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                          {formatTime(entry.createdAt)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditEntry(entry)}
+                          className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                          aria-label="Edit entry"
+                          title="Edit"
+                        >
+                          <Pencil size={12} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteEntry(entry)}
+                          disabled={deletingId === entry.id}
+                          className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                          aria-label="Delete log entry"
+                          title="Delete"
+                        >
+                          {deletingId === entry.id ? (
+                            <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={12} strokeWidth={1.5} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            const batch = group.entries;
+            const head = batch[0];
             return (
               <div
-                key={entry.id}
-                className="flex items-start gap-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3"
+                key={group.batchId}
+                className="border border-blue-500/35 bg-blue-500/[0.06] p-3"
               >
-                <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border ${config.colorClass}`}>
-                  <Icon size={14} strokeWidth={1.25} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold">{entry.prospectName}</p>
-                      <span className={`text-[10px] uppercase tracking-[0.2em] ${config.colorClass.split(" ")[0]}`}>
-                        {config.label}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <span className="mr-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                        {formatTime(entry.createdAt)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditEntry(entry)}
-                        className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
-                        aria-label="Edit entry"
-                        title="Edit"
-                      >
-                        <Pencil size={12} strokeWidth={1.5} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteEntry(entry)}
-                        disabled={deletingId === entry.id}
-                        className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
-                        aria-label="Delete log entry"
-                        title="Delete"
-                      >
-                        {deletingId === entry.id ? (
-                          <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
-                        ) : (
-                          <Trash2 size={12} strokeWidth={1.5} />
-                        )}
-                      </button>
-                    </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-500/20 pb-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <ImagePlus size={14} strokeWidth={1.25} className="shrink-0 text-blue-400/90" />
+                    <p className="text-sm font-semibold">{head.prospectName}</p>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-blue-300/90">
+                      Screenshot import · {batch.length} lines
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
+                  {hasImportBatchCol ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteImportBatch(group.batchId, head.prospectName, batch.length)}
+                      disabled={deletingBatchId === group.batchId}
+                      className="flex shrink-0 items-center gap-1.5 border border-rose-500/40 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-rose-300/95 transition hover:bg-rose-500/15 disabled:opacity-40"
+                    >
+                      {deletingBatchId === group.batchId ? (
+                        <Loader2 size={12} className="animate-spin" strokeWidth={1.5} />
+                      ) : (
+                        <Trash2 size={12} strokeWidth={1.5} />
+                      )}
+                      Remove batch
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {batch.map((entry) => {
+                    const reaction = isReactionBody(entry.body);
+                    const config = reaction
+                      ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
+                      : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
+                    const Icon = config.icon;
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-start gap-2 border border-[var(--rm-border)]/80 bg-[var(--rm-bg)]/80 p-2"
+                      >
+                        <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center border ${config.colorClass}`}>
+                          <Icon size={12} strokeWidth={1.25} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className={`text-[9px] uppercase tracking-[0.15em] ${config.colorClass.split(" ")[0]}`}>
+                              {config.label}
+                            </span>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <span className="text-[9px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]">
+                                {formatTime(entry.createdAt)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditEntry(entry)}
+                                className="flex h-7 w-7 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                                aria-label="Edit line"
+                                title="Edit"
+                              >
+                                <Pencil size={11} strokeWidth={1.5} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteEntry(entry)}
+                                disabled={deletingId === entry.id}
+                                className="flex h-7 w-7 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                                aria-label="Delete line"
+                                title="Delete this line only"
+                              >
+                                {deletingId === entry.id ? (
+                                  <Loader2 size={11} strokeWidth={1.5} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={11} strokeWidth={1.5} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                          <p className="mt-0.5 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -501,24 +780,31 @@ export default function ActivityLogPage() {
                   {prospects.map((p) => (<option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>))}
                 </select>
               </label>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">What happened</p>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
-                    const cfg = EVENT_CONFIG[type];
-                    const TypeIcon = cfg.icon;
-                    return (
-                      <button key={type} type="button" onClick={() => setLogType(type)} className={`flex items-center gap-1.5 border px-3 py-2 text-xs uppercase tracking-[0.2em] ${logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"}`}>
-                        <TypeIcon size={12} strokeWidth={1.25} />{cfg.label}
-                      </button>
-                    );
-                  })}
+              <details className="rounded border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
+                <summary className="cursor-pointer text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
+                  More options · type &amp; time (defaults: text · now)
+                </summary>
+                <div className="mt-3 space-y-3 border-t border-[var(--rm-border)] pt-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Type</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
+                        const cfg = EVENT_CONFIG[type];
+                        const TypeIcon = cfg.icon;
+                        return (
+                          <button key={type} type="button" onClick={() => setLogType(type)} className={`flex items-center gap-1.5 border px-2 py-1.5 text-[10px] uppercase tracking-[0.15em] ${logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"}`}>
+                            <TypeIcon size={11} strokeWidth={1.25} />{cfg.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                    <span className="flex items-center gap-1.5"><Calendar size={11} strokeWidth={1.25} />When</span>
+                    <input type="datetime-local" value={logWhen} onChange={(e) => setLogWhen(e.target.value)} className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-sm normal-case text-[var(--rm-text)]" />
+                  </label>
                 </div>
-              </div>
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className="flex items-center gap-1.5"><Calendar size={12} strokeWidth={1.25} />When</span>
-                <input type="datetime-local" value={logWhen} onChange={(e) => setLogWhen(e.target.value)} className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]" />
-              </label>
+              </details>
               <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
                 <span className={!logBody.trim() && logError?.includes("details") ? "text-rose-400" : ""}>
                   Details {!logBody.trim() && logError?.includes("details") ? "— add something" : ""}
@@ -538,154 +824,129 @@ export default function ActivityLogPage() {
         </div>
       ) : null}
 
-      {/* Screenshot Upload Modal */}
+      {/* Screenshot Upload Modal — upload first, auto-read, one-tap add all */}
       {isScreenshotOpen ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
           <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Upload Screenshot</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Screenshot</h2>
               <button type="button" onClick={resetScreenshotModal} className="text-[var(--rm-text-muted)]">
                 <X size={18} strokeWidth={1.25} />
               </button>
             </div>
 
             <p className="mt-2 text-xs text-[var(--rm-text-muted)]">
-              Drop a screenshot of your texts. AI will read the messages and add them to the log.
+              Pick a photo — we read it automatically. Then confirm who it&apos;s with and add everything in one tap.
             </p>
 
             <div className="mt-4 space-y-4">
-              {/* Who */}
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className={!screenshotProspectId && screenshotError ? "text-rose-400" : ""}>
-                  Who is this convo with? {!screenshotProspectId && screenshotError?.includes("Pick") ? "— pick someone" : ""}
-                </span>
-                <select
-                  value={screenshotProspectId}
-                  onChange={(e) => { setScreenshotProspectId(e.target.value); setScreenshotError(null); }}
-                  className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${
-                    !screenshotProspectId && screenshotError?.includes("Pick") ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
-                  }`}
-                >
-                  <option value="">Select a prospect...</option>
-                  {prospects.map((p) => (<option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className="flex items-center gap-1.5">
-                  <Calendar size={12} strokeWidth={1.25} />
-                  When did this encounter happen
-                </span>
-                <input
-                  type="datetime-local"
-                  value={screenshotWhen}
-                  onChange={(e) => setScreenshotWhen(e.target.value)}
-                  className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]"
-                />
-                {new Date(screenshotWhen).getTime() > Date.now() ? (
-                  <span className="mt-1 text-[10px] normal-case text-amber-400">
-                    Future time detected; save will clamp to current time.
-                  </span>
-                ) : null}
-              </label>
-
-              {/* File upload area */}
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
 
               {!screenshotPreview ? (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full flex-col items-center gap-3 border-2 border-dashed border-[var(--rm-border)] p-8 transition hover:border-blue-400/50"
+                  className="flex w-full flex-col items-center gap-3 border-2 border-dashed border-blue-500/35 bg-blue-500/5 p-8 transition hover:border-blue-400/55"
                 >
-                  <ImagePlus size={32} strokeWidth={1} className="text-[var(--rm-text-muted)]" />
-                  <span className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    Tap to select screenshot
+                  <ImagePlus size={32} strokeWidth={1} className="text-blue-400/80" />
+                  <span className="text-xs uppercase tracking-[0.3em] text-blue-200/90">
+                    Tap to choose screenshot
                   </span>
                 </button>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="relative">
                     <img src={screenshotPreview} alt="Screenshot" className="w-full border border-[var(--rm-border)]" />
+                    {isParsing ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/55">
+                        <Loader2 size={22} strokeWidth={1.25} className="animate-spin text-blue-400" />
+                        <span className="text-[10px] uppercase tracking-[0.25em] text-blue-200/95">Reading…</span>
+                      </div>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() => { setScreenshotFile(null); setScreenshotPreview(null); setParsedMessages([]); setScreenshotError(null); }}
-                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center bg-black/70 text-white"
+                      onClick={() => {
+                        setScreenshotFile(null);
+                        setScreenshotPreview(null);
+                        setParsedMessages([]);
+                        setScreenshotFilenameLabel("");
+                        setScreenshotThreadTitle(null);
+                        setScreenshotMatchSource(null);
+                        setScreenshotError(null);
+                      }}
+                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center bg-black/75 text-white"
+                      aria-label="Remove image"
                     >
                       <X size={14} />
                     </button>
                   </div>
-
-                  {parsedMessages.length === 0 && !isParsing ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!screenshotProspectId) { setScreenshotError("Pick who this convo is with first"); return; }
-                        handleParseScreenshot();
-                      }}
-                      disabled={isParsing}
-                      className="flex w-full items-center justify-center gap-2 border border-blue-400 px-4 py-2 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:bg-blue-400/10"
-                    >
-                      <MessageSquare size={14} strokeWidth={1.25} />
-                      Read Messages
-                    </button>
+                  {screenshotFilenameLabel ? (
+                    <p className="text-[10px] text-[var(--rm-text-muted)]">
+                      <span className="uppercase tracking-[0.2em]">File</span> · {screenshotFilenameLabel}
+                    </p>
+                  ) : null}
+                  {screenshotThreadTitle ? (
+                    <p className="text-[10px] text-[var(--rm-text-muted)]">
+                      <span className="uppercase tracking-[0.2em]">Chat header</span> · {screenshotThreadTitle}
+                    </p>
                   ) : null}
                 </div>
               )}
 
-              {/* Parsing state */}
-              {isParsing ? (
-                <div className="flex items-center justify-center gap-3 py-4">
-                  <Loader2 size={18} strokeWidth={1.25} className="animate-spin text-blue-400" />
-                  <span className="text-xs uppercase tracking-[0.3em] text-blue-400">Reading texts...</span>
-                </div>
-              ) : null}
-
-              {/* Parsed messages preview */}
               {parsedMessages.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    Found {parsedMessages.length} messages — select what to save
+                <>
+                  <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
+                    <span className={!screenshotProspectId && screenshotError ? "text-rose-400" : ""}>
+                      Who is this thread with?
+                    </span>
+                    <select
+                      value={screenshotProspectId}
+                      onChange={(e) => {
+                        setScreenshotProspectId(e.target.value);
+                        setScreenshotError(null);
+                        setScreenshotMatchSource(null);
+                      }}
+                      className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${
+                        !screenshotProspectId && screenshotError ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
+                      }`}
+                    >
+                      <option value="">Select…</option>
+                      {prospects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.tier})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {screenshotMatchSource === "thread" && screenshotProspectId ? (
+                    <p className="text-[10px] text-emerald-400/90">
+                      Picked{" "}
+                      <span className="font-medium text-emerald-200/95">
+                        {prospects.find((p) => p.id === screenshotProspectId)?.name ?? "roster match"}
+                      </span>{" "}
+                      from the chat header{screenshotThreadTitle ? ` (“${screenshotThreadTitle}”)` : ""} — change if wrong.
+                    </p>
+                  ) : null}
+                  {screenshotMatchSource === "filename" && screenshotProspectId ? (
+                    <p className="text-[10px] text-emerald-400/90">
+                      Matched roster from filename — change above if wrong.
+                    </p>
+                  ) : null}
+
+                  <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
+                    {parsedMessages.length} bubble{parsedMessages.length === 1 ? "" : "s"} ready · times use now (ordered)
                   </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedParsedIdx(new Set(parsedMessages.map((_, i) => i)))}
-                      className="border border-[var(--rm-border)] px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]"
-                    >
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedParsedIdx(new Set())}
-                      className="border border-[var(--rm-border)] px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-60 space-y-1.5 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
+                  <div className="max-h-52 space-y-1.5 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
                     {parsedMessages.map((msg, i) => (
                       <div
                         key={i}
                         className={`flex ${msg.direction === "outbound" ? "justify-end" : "justify-start"}`}
                       >
                         <div
-                          onClick={() => {
-                            setSelectedParsedIdx((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(i)) next.delete(i);
-                              else next.add(i);
-                              return next;
-                            });
-                          }}
-                          className={`max-w-[80%] cursor-pointer border px-3 py-2 text-xs ${
+                          className={`max-w-[85%] border border-transparent px-3 py-2 text-xs ${
                             msg.direction === "outbound"
-                              ? "bg-blue-500/20 text-blue-300"
+                              ? "bg-blue-500/20 text-blue-200/95"
                               : "bg-[var(--rm-bg-elevated)] text-[var(--rm-text-muted)]"
-                          } ${
-                            selectedParsedIdx.has(i)
-                              ? "border-[var(--rm-text)]"
-                              : "border-transparent opacity-60"
                           }`}
                         >
                           {msg.body}
@@ -696,20 +957,23 @@ export default function ActivityLogPage() {
 
                   <button
                     type="button"
-                    onClick={handleSaveScreenshotMessages}
-                    disabled={isSavingScreenshot || selectedParsedIdx.size === 0}
-                    className="flex w-full items-center justify-center gap-2 border border-[var(--rm-text)] bg-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] text-[var(--rm-bg)] transition hover:opacity-90 disabled:opacity-60"
+                    onClick={() => {
+                      if (!screenshotProspectId) {
+                        setScreenshotError("Pick who this thread is with.");
+                        return;
+                      }
+                      void handleSaveScreenshotMessages();
+                    }}
+                    disabled={isSavingScreenshot}
+                    className="flex w-full items-center justify-center gap-2 border border-emerald-500/50 bg-emerald-500/15 px-4 py-3 text-xs font-medium uppercase tracking-[0.28em] text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-60"
                   >
-                    {isSavingScreenshot ? "Saving..." : `Save ${selectedParsedIdx.size} Message${selectedParsedIdx.size === 1 ? "" : "s"}`}
+                    {isSavingScreenshot ? "Saving…" : `Add ${parsedMessages.length} to log`}
                   </button>
-                </div>
+                </>
               ) : null}
 
-              {/* Error */}
               {screenshotError ? (
-                <div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">
-                  {screenshotError}
-                </div>
+                <div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">{screenshotError}</div>
               ) : null}
             </div>
           </div>

@@ -56,8 +56,10 @@ export async function POST(req: Request) {
         {
           role: "system",
           content:
-            "You are analyzing a screenshot of a text/iMessage/WhatsApp conversation. " +
-            "Extract the messages you can see. For each message, determine:\n" +
+            "You are analyzing a screenshot of a text/iMessage/WhatsApp conversation.\n\n" +
+            "First, read the CONTACT NAME shown in the app header / title bar at the TOP of the thread (e.g. the name next to the back chevron). " +
+            "Put that exact visible string in thread_title. If there is no clear single contact name, use null.\n\n" +
+            "Then extract the messages you can see. For each message, determine:\n" +
             '- direction: "inbound" if the OTHER person sent it, "outbound" if the USER (phone owner) sent it\n' +
             "- body: the text content of the message\n\n" +
             "CRITICAL RULES for determining direction:\n" +
@@ -71,10 +73,9 @@ export async function POST(req: Request) {
             'A "You" label inside a quote bubble on the LEFT side means the other person is quoting the user — the reply below the quote is INBOUND, not outbound.\n' +
             "- Voice messages, audio clips, or media with no text: skip them entirely\n" +
             "- Forwarded messages belong to whoever forwarded them (the bubble side they appear on)\n\n" +
-            "Return ONLY a JSON array of objects, oldest message first. Example:\n" +
-            '[{"direction":"inbound","body":"Hey are you free Saturday?"},{"direction":"outbound","body":"Yeah I think so, what time?"}]\n\n' +
-            "If you can't read the messages or it's not a text conversation screenshot, return an empty array [].\n" +
-            "Return ONLY the JSON array, no markdown fences, no explanation.",
+            "Return ONLY one JSON object (no markdown fences, no explanation) with this exact shape:\n" +
+            '{"thread_title":"Contact Name Here" or null,"messages":[{"direction":"inbound","body":"..."},...]}\n' +
+            "messages must be oldest first. If you can't read the conversation, use {\"thread_title\":null,\"messages\":[]}.",
         },
         {
           role: "user",
@@ -88,21 +89,42 @@ export async function POST(req: Request) {
             },
             {
               type: "text",
-              text: "Read this text conversation screenshot and extract the messages as JSON.",
+              text: "Read this screenshot: extract thread_title (header name) and messages as specified.",
             },
           ],
         },
       ],
-      max_tokens: 1000,
+      max_tokens: 1200,
     });
 
-    const raw = completion.choices[0]?.message?.content?.trim() ?? "[]";
+    const raw = completion.choices[0]?.message?.content?.trim() ?? "{}";
 
     const cleaned = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/i, "").trim();
 
     let messages: { direction: string; body: string }[];
+    let threadTitle: string | null = null;
+
     try {
-      messages = JSON.parse(cleaned);
+      const parsed: unknown = JSON.parse(cleaned);
+      if (Array.isArray(parsed)) {
+        messages = parsed as { direction: string; body: string }[];
+      } else if (parsed && typeof parsed === "object") {
+        const o = parsed as Record<string, unknown>;
+        const rawTitle = o.thread_title ?? o.threadTitle;
+        if (typeof rawTitle === "string") {
+          const t = rawTitle.trim();
+          threadTitle = t.length > 0 ? t : null;
+        } else {
+          threadTitle = null;
+        }
+        const arr = o.messages;
+        messages = Array.isArray(arr) ? (arr as { direction: string; body: string }[]) : [];
+      } else {
+        return NextResponse.json(
+          { error: "AI response was not valid JSON.", raw },
+          { status: 500 }
+        );
+      }
     } catch {
       return NextResponse.json(
         { error: "Failed to parse AI response.", raw },
@@ -112,7 +134,7 @@ export async function POST(req: Request) {
 
     if (!Array.isArray(messages)) {
       return NextResponse.json(
-        { error: "AI response was not an array.", raw },
+        { error: "AI response missing messages array.", raw },
         { status: 500 }
       );
     }
@@ -155,7 +177,7 @@ export async function POST(req: Request) {
       };
     });
 
-    return NextResponse.json({ messages: withReactions });
+    return NextResponse.json({ messages: withReactions, threadTitle });
   } catch (err) {
     console.error("Screenshot parse error:", err);
     return NextResponse.json(

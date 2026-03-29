@@ -36,27 +36,49 @@ export async function GET(_req: Request) {
   }
 
   // Always check the DB — never trust the incoming cookie
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("subscriptions")
-    .select("id")
+    .select("id, plan_tier")
     .eq("status", "active")
     .eq("user_id", user.id)
     .limit(1);
 
+  if (
+    error &&
+    (error.message?.includes("plan_tier") || error.message?.includes("column"))
+  ) {
+    const fb = await supabase
+      .from("subscriptions")
+      .select("id")
+      .eq("status", "active")
+      .eq("user_id", user.id)
+      .limit(1);
+    data = fb.data as typeof data;
+    error = fb.error;
+  }
+
   if (error) {
     console.error("Check subscription error:", error);
     // Can't verify — don't grant Pro, but also don't clear (might be a transient error)
-    return NextResponse.json({ pro: false, lookupFailed: true });
+    return NextResponse.json({ pro: false, elite: false, lookupFailed: true });
   }
 
-  const pro = (data ?? []).length > 0;
-  const response = NextResponse.json({ pro });
+  const row = (data ?? [])[0] as { id?: string; plan_tier?: string } | undefined;
+  const pro = Boolean(row);
+  const elite = pro && row?.plan_tier === "elite";
+  const response = NextResponse.json({ pro, elite });
 
   if (pro) {
     response.cookies.set("stack_pro", "1", cookieOpts);
+    if (elite) {
+      response.cookies.set("stack_elite", "1", cookieOpts);
+    } else {
+      response.cookies.set("stack_elite", "", clearCookieOpts);
+    }
   } else {
     // Definitively not Pro — clear the cookie server-side too
     response.cookies.set("stack_pro", "", clearCookieOpts);
+    response.cookies.set("stack_elite", "", clearCookieOpts);
   }
 
   return response;

@@ -11,8 +11,8 @@ import { useSession } from "../../../lib/use-session";
 
 const DEFAULT_REMIND_DAYS: Record<string, number> = { A: 7, B: 14, C: 30 };
 
-// Roster is unlimited on free — AI drafts are the gated feature
-const FREE_ROSTER_LIMIT = Infinity;
+/** Free tier: one roster slot; Pro/Elite unlimited. */
+const FREE_ROSTER_LIMIT = 1;
 
 type Tier = "A" | "B" | "C";
 
@@ -83,6 +83,9 @@ export default function RosterPage() {
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [prospectMessages, setProspectMessages] = React.useState<MessageItem[]>([]);
   const [showPaywall, setShowPaywall] = React.useState(false);
+  const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(
+    undefined
+  );
   const { isPro } = useProStatus();
   const { userId } = useSession();
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
@@ -261,6 +264,7 @@ export default function RosterPage() {
 
   const handleNewProspectClick = () => {
     if (!isPro && totalProspects >= FREE_ROSTER_LIMIT) {
+      setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
     } else {
       setIsModalOpen(true);
@@ -273,6 +277,12 @@ export default function RosterPage() {
     const trimmedName = newName.trim();
     if (!trimmedName) {
       setError("Name is required.");
+      return;
+    }
+    if (!isPro && totalProspects >= FREE_ROSTER_LIMIT) {
+      setPaywallFeature("Unlimited roster");
+      setShowPaywall(true);
+      setIsModalOpen(false);
       return;
     }
 
@@ -321,6 +331,11 @@ export default function RosterPage() {
   const handleGenerateResponse = async () => {
     const client = supabaseRef.current;
     if (!client || !selectedProspect) return;
+    if (!isPro) {
+      setPaywallFeature("Roster AI simulator");
+      setShowPaywall(true);
+      return;
+    }
     if (!incomingText.trim()) {
       setError("Incoming text is required.");
       return;
@@ -478,13 +493,24 @@ export default function RosterPage() {
           <p className="text-sm text-[var(--rm-text-muted)]">
             Drag prospects across tiers to match priority.
           </p>
+          {!isPro ? (
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]/90">
+              Free · 1 roster slot · roster AI is Pro · home has 1 AI draft
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
           onClick={handleNewProspectClick}
-          className="border border-[var(--rm-border)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:border-[var(--rm-text)]"
+          className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition ${
+            !isPro && totalProspects >= FREE_ROSTER_LIMIT
+              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200/95 hover:border-emerald-400/70"
+              : "border-[var(--rm-border)] hover:border-[var(--rm-text)]"
+          }`}
         >
-          New Prospect
+          {!isPro && totalProspects >= FREE_ROSTER_LIMIT
+            ? "Upgrade · more roster"
+            : "New Prospect"}
         </button>
       </header>
 
@@ -841,9 +867,17 @@ export default function RosterPage() {
                 type="button"
                 onClick={handleGenerateResponse}
                 disabled={isGenerating}
-                className="border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+                className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  !isPro
+                    ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-100/90 hover:border-emerald-400/60"
+                    : "border-[var(--rm-text)] hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
+                }`}
               >
-                {isGenerating ? "Generating..." : "Generate Response"}
+                {isGenerating
+                  ? "Generating..."
+                  : !isPro
+                    ? "Unlock AI · Pro"
+                    : "Generate Response"}
               </button>
 
               {responseData ? (
@@ -880,8 +914,11 @@ export default function RosterPage() {
 
       <PaywallModal
         isOpen={showPaywall}
-        onClose={() => setShowPaywall(false)}
-        feature="Adding more than 1 roster member"
+        onClose={() => {
+          setShowPaywall(false);
+          setPaywallFeature(undefined);
+        }}
+        feature={paywallFeature}
       />
     </div>
   );

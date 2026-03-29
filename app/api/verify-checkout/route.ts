@@ -13,6 +13,13 @@ const cookieOpts = {
   secure: process.env.NODE_ENV === "production",
 };
 
+const clearCookieOpts = {
+  path: "/",
+  maxAge: 0,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+};
+
 export async function POST(req: Request) {
   if (!stripe) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 500 });
@@ -50,8 +57,10 @@ export async function POST(req: Request) {
     const session = await stripe.checkout.sessions.retrieve(session_id);
 
     if (session.status !== "complete") {
-      return NextResponse.json({ pro: false, reason: "not_complete" });
+      return NextResponse.json({ pro: false, elite: false, reason: "not_complete" });
     }
+
+    const planTier = session.metadata?.tier === "elite" ? "elite" : "pro";
 
     const { error: upsertError } = await supabase.from("subscriptions").upsert(
       {
@@ -61,6 +70,7 @@ export async function POST(req: Request) {
         stripe_subscription_id:
           typeof session.subscription === "string" ? session.subscription : null,
         status: "active",
+        plan_tier: planTier,
       },
       { onConflict: "user_id" }
     );
@@ -72,15 +82,21 @@ export async function POST(req: Request) {
           pro: false,
           error:
             upsertError.code === "PGRST205" || upsertError.message?.includes("subscriptions")
-              ? "Database not ready: run supabase/subscriptions-migration.sql and subscriptions-user-migration.sql."
+              ? "Database not ready: run supabase/subscriptions-migration.sql, subscriptions-user-migration.sql, and subscriptions-plan-tier-migration.sql."
               : upsertError.message ?? "Could not save subscription.",
         },
         { status: 500 }
       );
     }
 
-    const response = NextResponse.json({ pro: true });
+    const elite = planTier === "elite";
+    const response = NextResponse.json({ pro: true, elite });
     response.cookies.set("stack_pro", "1", cookieOpts);
+    if (elite) {
+      response.cookies.set("stack_elite", "1", cookieOpts);
+    } else {
+      response.cookies.set("stack_elite", "", clearCookieOpts);
+    }
     return response;
   } catch (err) {
     console.error("Verify checkout error:", err);

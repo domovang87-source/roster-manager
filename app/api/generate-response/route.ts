@@ -11,6 +11,16 @@ type RequestBody = {
   vibeNotes?: string;
   incomingText: string;
   prospectId?: string;
+  /** Elite-only tone modifier (ignored when absent). */
+  toneStyle?: string;
+};
+
+const TONE_STYLE_HINTS: Record<string, string> = {
+  balanced: "Keep the tier voice; stay natural and socially calibrated.",
+  playful: "Light teasing and fun energy — witty, never try-hard or corny.",
+  dominant: "Lead the frame: confident, direct, composed — no neediness or over-explaining.",
+  warm: "Genuine warmth and emotional availability without sounding soft or apologetic.",
+  minimal: "Ultra-brevity: one tight line when possible; cool, low-effort presence.",
 };
 
 const getOpenAIClient = () => {
@@ -80,7 +90,7 @@ async function getActivityContext(
 
 export async function POST(req: Request) {
   const body = (await req.json()) as RequestBody;
-  const { tier, name, vibeNotes, incomingText, prospectId } = body ?? {};
+  const { tier, name, vibeNotes, incomingText, prospectId, toneStyle } = body ?? {};
 
   if (!tier) {
     return NextResponse.json(
@@ -125,6 +135,9 @@ export async function POST(req: Request) {
   }
 
   const voiceProfile = ruleData?.voice_profile ?? "Confident, concise, classy.";
+  const toneKey = typeof toneStyle === "string" ? toneStyle.trim().toLowerCase() : "";
+  const toneExtra =
+    toneKey && TONE_STYLE_HINTS[toneKey] ? ` Tone override: ${TONE_STYLE_HINTS[toneKey]}` : "";
 
   const contextBlock = [
     `Prospect: ${name}`,
@@ -137,7 +150,7 @@ export async function POST(req: Request) {
 
   const systemPrompt =
     "You are a texting assistant helping the user keep their dating roster warm. " +
-    `Voice style: ${voiceProfile}. ` +
+    `Voice style: ${voiceProfile}.${toneExtra} ` +
     "Draft a short, natural text message the user can send. " +
     "Use the prospect's notes and activity history to personalize it. " +
     "If there's been no contact in a while, craft a casual re-engagement text. " +

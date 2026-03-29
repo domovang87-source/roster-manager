@@ -7,6 +7,17 @@ const DEFAULT_REMIND_DAYS: Record<Tier, number> = { A: 7, B: 14, C: 30 };
 
 const allClear = "All quiet. No one needs attention right now.";
 
+/** User hid the card (X): pause briefing until they get a new inbound text or restore the card. */
+function isBriefingSnoozed(
+  briefingClearedAt: string | null | undefined,
+  lastInboundIso: string | undefined
+): boolean {
+  if (!briefingClearedAt) return false;
+  const clearedMs = new Date(briefingClearedAt).getTime();
+  if (!lastInboundIso) return true;
+  return new Date(lastInboundIso).getTime() <= clearedMs;
+}
+
 export async function GET() {
   try {
     const supabase = await createServerSupabase();
@@ -18,27 +29,33 @@ export async function GET() {
       return NextResponse.json({ synopsis: allClear });
     }
 
-    const [prospectsRes, messagesRes, dismissedRes, draftsRes, rulesRes] = await Promise.all([
-      supabase.from("prospects").select("id,name,tier"),
+    const [prospectsRes, messagesRes, draftsRes, rulesRes] = await Promise.all([
+      supabase.from("prospects").select("id,name,tier,briefing_cleared_at"),
       supabase
         .from("messages")
-        .select("prospect_id,created_at")
+        .select("prospect_id,created_at,direction")
         .order("created_at", { ascending: false })
-        .limit(5000),
-      supabase
-        .from("scheduled_replies")
-        .select("prospect_id,dismissed_at")
-        .eq("status", "dismissed")
-        .not("dismissed_at", "is", null)
-        .order("dismissed_at", { ascending: false })
         .limit(5000),
       supabase.from("scheduled_replies").select("prospect_id").eq("status", "scheduled").limit(100),
       supabase.from("tier_rules").select("tier,remind_after_days"),
     ]);
 
+    if (prospectsRes.error) {
+      if (
+        prospectsRes.error.message?.includes("briefing_cleared_at") ||
+        prospectsRes.error.message?.includes("column")
+      ) {
+        console.error(
+          "daily-narrative: add prospects.briefing_cleared_at (see supabase/prospects-briefing-cleared-migration.sql)"
+        );
+      } else {
+        console.error("daily-narrative prospects error:", prospectsRes.error);
+      }
+      return NextResponse.json({ synopsis: allClear });
+    }
+
     const prospects = prospectsRes.data ?? [];
     const messages = messagesRes.data ?? [];
-    const dismissed = dismissedRes.data ?? [];
     const drafts = draftsRes.data ?? [];
     const rules = rulesRes.data ?? [];
 
@@ -53,17 +70,17 @@ export async function GET() {
       }
     });
 
-    const lastActivity = new Map<string, string>();
+    const lastAnyActivity = new Map<string, string>();
+    const lastInbound = new Map<string, string>();
     for (const msg of messages) {
       const pid = msg.prospect_id as string;
-      if (!lastActivity.has(pid)) {
-        lastActivity.set(pid, msg.created_at as string);
+      const at = msg.created_at as string;
+      const dir = msg.direction as string;
+      if (!lastAnyActivity.has(pid)) {
+        lastAnyActivity.set(pid, at);
       }
-    }
-    for (const row of dismissed) {
-      const pid = row.prospect_id as string;
-      if (!lastActivity.has(pid)) {
-        lastActivity.set(pid, row.dismissed_at as string);
+      if (dir === "inbound" && !lastInbound.has(pid)) {
+        lastInbound.set(pid, at);
       }
     }
 
@@ -75,8 +92,14 @@ export async function GET() {
       const pid = String(p.id);
       const tier = p.tier as Tier;
       const name = p.name as string;
+      const clearedAt = p.briefing_cleared_at as string | null | undefined;
+
+      if (isBriefingSnoozed(clearedAt, lastInbound.get(pid))) {
+        continue;
+      }
+
       const threshold = remindDays[tier] ?? DEFAULT_REMIND_DAYS[tier] ?? 14;
-      const last = lastActivity.get(pid);
+      const last = lastAnyActivity.get(pid);
 
       if (!last) {
         staleProspects.push(`${name} (${tier}-Tier) — no activity logged yet`);
@@ -88,8 +111,12 @@ export async function GET() {
         staleProspects.push(`${name} (${tier}-Tier) — ${daysSince}d since last interaction, threshold is ${threshold}d`);
       }
 
-      if (tier === "A" && daysSince < 2) {
-        activeANames.push(name);
+      const inAt = lastInbound.get(pid);
+      if (tier === "A" && inAt) {
+        const daysSinceIn = Math.floor((now - new Date(inAt).getTime()) / 86_400_000);
+        if (daysSinceIn < 2) {
+          activeANames.push(name);
+        }
       }
     }
 
@@ -107,7 +134,7 @@ export async function GET() {
       snippets.push("Everyone is up to date.");
     }
     if (activeANames.length > 0) {
-      snippets.push(`Recent A-Tier activity: ${activeANames.join(", ")}.`);
+      snippets.push(`A-tier with a recent text from them: ${activeANames.join(", ")}.`);
     }
     if (draftCount > 0) {
       snippets.push(`${draftCount} draft(s) waiting.`);

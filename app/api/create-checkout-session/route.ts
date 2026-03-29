@@ -5,9 +5,14 @@ import { createServerSupabase } from "@/lib/supabase/server";
 const secretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = secretKey ? new Stripe(secretKey) : null;
 
-const priceIds = {
+const proPriceIds = {
   monthly: process.env.STRIPE_PRICE_ID_MONTHLY ?? process.env.STRIPE_PRICE_ID ?? "",
   yearly: process.env.STRIPE_PRICE_ID_YEARLY ?? "",
+};
+
+const elitePriceIds = {
+  monthly: process.env.STRIPE_PRICE_ID_ELITE_MONTHLY ?? "",
+  yearly: process.env.STRIPE_PRICE_ID_ELITE_YEARLY ?? "",
 };
 
 export async function POST(req: Request) {
@@ -15,13 +20,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 500 });
   }
 
-  const body = (await req.json()) as { plan?: "monthly" | "yearly" };
+  const body = (await req.json()) as {
+    plan?: "monthly" | "yearly";
+    tier?: "pro" | "elite";
+  };
   const plan = body.plan === "yearly" ? "yearly" : "monthly";
-  const priceId = priceIds[plan];
+  const tier = body.tier === "elite" ? "elite" : "pro";
+  const priceId =
+    tier === "elite" ? elitePriceIds[plan] : proPriceIds[plan];
 
   if (!priceId) {
     return NextResponse.json(
-      { error: `Stripe price ID for ${plan} plan is not configured.` },
+      {
+        error:
+          tier === "elite"
+            ? `Elite Stripe price ID for ${plan} billing is not configured (set STRIPE_PRICE_ID_ELITE_MONTHLY / STRIPE_PRICE_ID_ELITE_YEARLY).`
+            : `Stripe price ID for ${plan} plan is not configured.`,
+      },
       { status: 500 }
     );
   }
@@ -56,7 +71,7 @@ export async function POST(req: Request) {
       success_url: `${base}/home?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/home?canceled=1`,
       client_reference_id: user.id,
-      metadata: { supabase_user_id: user.id, plan },
+      metadata: { supabase_user_id: user.id, plan, tier },
     });
 
     return NextResponse.json({ url: session.url });

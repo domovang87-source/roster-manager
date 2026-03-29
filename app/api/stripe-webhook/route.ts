@@ -65,6 +65,8 @@ export async function POST(req: Request) {
           break;
         }
 
+        const planTier = session.metadata?.tier === "elite" ? "elite" : "pro";
+
         const { error } = await supabase.from("subscriptions").upsert(
           {
             user_id: userId,
@@ -74,6 +76,7 @@ export async function POST(req: Request) {
             stripe_subscription_id:
               typeof session.subscription === "string" ? session.subscription : null,
             status: "active",
+            plan_tier: planTier,
           },
           { onConflict: "user_id" }
         );

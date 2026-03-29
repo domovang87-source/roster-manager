@@ -7,9 +7,22 @@ import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, Thu
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
+import { expectOutcomeAfterNextScreenshot } from "../../../lib/draft-outcome-analytics";
 import { useProStatus } from "../../../lib/use-pro-status";
 
 const FREE_AI_DRAFTS = 1; // free users get this many drafts before paywall
+const PRO_REGEN_LIMIT = 5;
+const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
+
+const ELITE_TONES = [
+  { id: "balanced", label: "Balanced" },
+  { id: "playful", label: "Playful" },
+  { id: "dominant", label: "Dominant" },
+  { id: "warm", label: "Warm" },
+  { id: "minimal", label: "Minimal" },
+] as const;
+
+type EliteToneId = (typeof ELITE_TONES)[number]["id"];
 
 type Tier = "A" | "B" | "C";
 
@@ -24,6 +37,8 @@ type TierProspect = {
   lastActivityAt?: string;
   draftId?: string;
   draftText?: string;
+  /** 0–100 thread health for this person (log + screenshot uploads grow it). */
+  momentum?: number;
 };
 
 type UndoToast = {
@@ -44,6 +59,38 @@ type DismissedDraft = {
 };
 
 const LOCAL_DISMISSED_KEY = "stack_home_dismissed_cards_v1";
+
+type ThreadAgg = {
+  inbound: number;
+  outbound: number;
+  noteCount: number;
+  touchBaseCount: number;
+  total: number;
+};
+
+/** Per-person: rhythm + two-way texts + notes / touch-ins — rewards logging this thread. */
+function computeThreadMomentum(a: ThreadAgg): number {
+  if (a.total === 0) return 0;
+  const totalDir = a.inbound + a.outbound;
+  const balance =
+    totalDir === 0
+      ? 0
+      : Math.min(38, ((2 * Math.min(a.inbound, a.outbound)) / totalDir) * 38);
+  const cadence = Math.min(42, Math.sqrt(a.total) * 11);
+  const followThrough = Math.min(24, a.noteCount * 3.2 + a.touchBaseCount * 3.5);
+  return Math.min(100, Math.round(cadence * 0.45 + balance * 0.45 + followThrough * 0.35));
+}
+
+function loadRegenMap(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(REGEN_STORAGE_KEY);
+    const p = raw ? JSON.parse(raw) : {};
+    return p && typeof p === "object" ? p : {};
+  } catch {
+    return {};
+  }
+}
 
 export default function HomePage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
@@ -66,10 +113,16 @@ export default function HomePage() {
   const [dismissedOpen, setDismissedOpen] = React.useState(false);
   const [quickTouchingId, setQuickTouchingId] = React.useState<string | null>(null);
   const [touchBaseToast, setTouchBaseToast] = React.useState<string | null>(null);
+  const [regenByDraftId, setRegenByDraftId] = React.useState<Record<string, number>>({});
+  const [draftToneByProspect, setDraftToneByProspect] = React.useState<Record<string, EliteToneId>>({});
   const messagesEventTypeRef = React.useRef(true);
-  const { isPro, markPro } = useProStatus();
+  const { isPro, isElite, markPro } = useProStatus();
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  React.useEffect(() => {
+    setRegenByDraftId(loadRegenMap());
+  }, []);
 
   React.useEffect(() => {
     const sessionId = searchParams.get("session_id");
@@ -82,9 +135,9 @@ export default function HomePage() {
       body: JSON.stringify({ session_id: sessionId }),
     })
       .then((r) => r.json())
-      .then((data: { pro?: boolean; error?: string }) => {
+      .then((data: { pro?: boolean; elite?: boolean; error?: string }) => {
         if (data.pro) {
-          markPro();
+          markPro({ elite: data.elite === true });
         } else if (data.error) {
           setError(data.error);
         }
@@ -170,6 +223,16 @@ export default function HomePage() {
       ...prev.filter((d) => d.id !== dismissKey),
     ]);
 
+    // X = "off my stack for now" — briefing ignores them until new inbound or Restore (not "I texted them").
+    void fetch("/api/clear-prospect-briefing", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prospect_id: prospect.id }),
+    }).then(() => {
+      void refetchNarrative();
+    });
+
     if (!draftId) return;
 
     // If there is a draft, mark it dismissed server-side.
@@ -224,6 +287,14 @@ export default function HomePage() {
       setDraftEdits((prev) => ({ ...prev, [toast.draftId]: toast.text }));
       setDismissingDraftIds((prev) => ({ ...prev, [toast.draftId]: false }));
       setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== toast.prospectId));
+      void fetch("/api/unclear-prospect-briefing", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospect_id: toast.prospectId }),
+      }).then(() => {
+        void refetchNarrative();
+      });
     } catch {
       setError("Failed to undo dismissal.");
     }
@@ -284,6 +355,14 @@ export default function HomePage() {
       const scheduled = (scheduledRows ?? [])[0];
 
       setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
+      void fetch("/api/unclear-prospect-briefing", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospect_id: draft.prospectId }),
+      }).then(() => {
+        void refetchNarrative();
+      });
       setDismissingDraftIds((prev) => {
         const next = { ...prev };
         delete next[draft.id];
@@ -359,7 +438,7 @@ export default function HomePage() {
         client.from("prospects").select("id,name,tier,phone_number,vibe_notes"),
         client
           .from("messages")
-          .select("id,body,created_at,direction,prospect_id")
+          .select("id,body,created_at,direction,prospect_id,event_type")
           .order("created_at", { ascending: false })
           .limit(2000),
         client.from("scheduled_replies").select("id,draft_text,prospect_id").eq("status", "scheduled").limit(100),
@@ -373,8 +452,22 @@ export default function HomePage() {
 
       const latestActivityAt = new Map<string, string>();
       const latestInbound = new Map<string, { body: string; at: string }>();
+      const threadAgg = new Map<string, ThreadAgg>();
+      const bumpAgg = (pid: string) => {
+        if (!threadAgg.has(pid)) {
+          threadAgg.set(pid, { inbound: 0, outbound: 0, noteCount: 0, touchBaseCount: 0, total: 0 });
+        }
+        return threadAgg.get(pid)!;
+      };
       for (const row of messagesRes.data ?? []) {
         const pid = row.prospect_id as string;
+        const agg = bumpAgg(pid);
+        agg.total += 1;
+        if (row.direction === "inbound") agg.inbound += 1;
+        else if (row.direction === "outbound") agg.outbound += 1;
+        if (row.event_type === "note") agg.noteCount += 1;
+        const bodyStr = String(row.body ?? "");
+        if (row.direction === "outbound" && bodyStr.includes("Touched base")) agg.touchBaseCount += 1;
         if (!latestActivityAt.has(pid)) {
           latestActivityAt.set(pid, row.created_at as string);
         }
@@ -400,6 +493,7 @@ export default function HomePage() {
         const pid = String(row.id);
         const inbound = latestInbound.get(pid);
         const draft = draftByProspect.get(pid);
+        const agg = threadAgg.get(pid);
         const p: TierProspect = {
           id: pid,
           name: row.name ?? "Unknown",
@@ -410,6 +504,7 @@ export default function HomePage() {
           lastActivityAt: latestActivityAt.get(pid),
           draftId: draft?.id,
           draftText: draft?.text,
+          momentum: agg ? computeThreadMomentum(agg) : 0,
         };
         result[tier].push(p);
         if (draft) edits[draft.id] = draft.text;
@@ -544,6 +639,18 @@ export default function HomePage() {
     }, 300);
   };
 
+  const bumpRegenCount = React.useCallback((draftId: string) => {
+    setRegenByDraftId((prev) => {
+      const next = { ...prev, [draftId]: (prev[draftId] ?? 0) + 1 };
+      try {
+        window.localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
   const handleGenerateDraft = async (
     prospect: TierProspect,
     opts?: { regenerate?: boolean }
@@ -554,9 +661,24 @@ export default function HomePage() {
       setShowPaywall(true);
       return;
     }
+    if (
+      regenerating &&
+      prospect.draftId &&
+      isPro &&
+      !isElite &&
+      (regenByDraftId[prospect.draftId] ?? 0) >= PRO_REGEN_LIMIT
+    ) {
+      setError(
+        "Pro includes 5 regenerations per draft. Elite adds unlimited regenerations and tone styles."
+      );
+      return;
+    }
     setIsGenerating(prospect.id);
     setError(null);
     try {
+      const toneStyle = isElite
+        ? draftToneByProspect[prospect.id] ?? "balanced"
+        : undefined;
       const res = await fetch("/api/generate-response", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -567,6 +689,7 @@ export default function HomePage() {
           vibeNotes: prospect.vibeNotes || "",
           incomingText: prospect.lastInboundBody || "",
           prospectId: prospect.id,
+          ...(toneStyle ? { toneStyle } : {}),
         }),
       });
       const data = await res.json();
@@ -603,6 +726,8 @@ export default function HomePage() {
           return next;
         });
         setDraftEdits((prev) => ({ ...prev, [id]: text }));
+        expectOutcomeAfterNextScreenshot(id, prospect.id);
+        if (isPro && !isElite) bumpRegenCount(id);
         return;
       }
 
@@ -643,6 +768,7 @@ export default function HomePage() {
       });
       setDraftEdits((prev) => ({ ...prev, [inserted.id]: inserted.draftText }));
       setDraftsEverGenerated((n) => n + 1);
+      expectOutcomeAfterNextScreenshot(inserted.id, prospect.id);
     } catch {
       setError("Failed to generate draft.");
     } finally {
@@ -689,7 +815,7 @@ export default function HomePage() {
     <div className="space-y-3 sm:space-y-8">
       {/* Header */}
       <header className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
-        <div className="space-y-0.5 sm:space-y-3">
+        <div>
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
@@ -701,9 +827,15 @@ export default function HomePage() {
           </Link>
 
           {isPro ? (
-            <span className="flex items-center gap-1 border border-emerald-500/40 px-2 py-0.5 text-[9px] uppercase tracking-[0.3em] text-emerald-400 sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.35em]">
+            <span
+              className={`flex items-center gap-1 border px-2 py-0.5 text-[9px] uppercase tracking-[0.3em] sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.35em] ${
+                isElite
+                  ? "border-amber-500/45 text-amber-300/95"
+                  : "border-emerald-500/40 text-emerald-400"
+              }`}
+            >
               <Sparkles size={10} strokeWidth={1.5} />
-              Pro
+              {isElite ? "Elite" : "Pro"}
             </span>
           ) : (
             <button
@@ -848,6 +980,9 @@ export default function HomePage() {
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
                     const generatingNoDraft = isGenerating === prospect.id;
                     const dismissKey = draftId || prospect.id;
+                    const regenUsed = draftId ? (regenByDraftId[draftId] ?? 0) : 0;
+                    const regenBlocked =
+                      isPro && !isElite && Boolean(draftId) && regenUsed >= PRO_REGEN_LIMIT;
 
                     return (
                       <div
@@ -857,7 +992,19 @@ export default function HomePage() {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="min-w-0 flex-1 truncate text-sm font-semibold">{prospect.name}</p>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
+                            <span
+                              className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[8px] uppercase tracking-[0.14em] ${
+                                (prospect.momentum ?? 0) > 0
+                                  ? "border-amber-500/40 text-amber-200/95"
+                                  : "border-[var(--rm-border)] text-[var(--rm-text-muted)]/55"
+                              }`}
+                              title="This person’s thread score — screenshots & log lines make it climb."
+                            >
+                              M·{prospect.momentum ?? 0}
+                            </span>
+                          </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {prospect.lastActivityAt ? (
                               <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
@@ -884,6 +1031,39 @@ export default function HomePage() {
                           </div>
                         </div>
 
+                        {isElite ? (
+                          <div className="mt-2 border-t border-[var(--rm-border)]/50 pt-2">
+                            <p className="mb-1 text-[8px] uppercase tracking-[0.2em] text-slate-500">
+                              Tone style
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {ELITE_TONES.map((t) => {
+                                const active =
+                                  (draftToneByProspect[prospect.id] ?? "balanced") === t.id;
+                                return (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    onClick={() =>
+                                      setDraftToneByProspect((prev) => ({
+                                        ...prev,
+                                        [prospect.id]: t.id,
+                                      }))
+                                    }
+                                    className={`rounded-full px-2 py-0.5 text-[8px] uppercase tracking-[0.08em] transition ${
+                                      active
+                                        ? "border border-amber-500/50 bg-amber-500/10 text-amber-100/90"
+                                        : "border border-transparent text-slate-500 hover:border-slate-600/50 hover:text-slate-300"
+                                    }`}
+                                  >
+                                    {t.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+
                         {draftId && currentDraft ? (
                           <>
                             {prospect.lastInboundBody ? (
@@ -900,9 +1080,13 @@ export default function HomePage() {
                                   <button
                                     type="button"
                                     onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
-                                    disabled={isGenerating === prospect.id}
+                                    disabled={isGenerating === prospect.id || regenBlocked}
                                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
-                                    title="Regenerate draft"
+                                    title={
+                                      regenBlocked
+                                        ? `Pro: ${PRO_REGEN_LIMIT} regenerations per draft — Elite is unlimited`
+                                        : "Regenerate draft"
+                                    }
                                     aria-label="Regenerate draft"
                                   >
                                     <RefreshCw
@@ -951,6 +1135,11 @@ export default function HomePage() {
                                     <Share size={15} strokeWidth={1.2} />
                                   </button>
                                 </div>
+                                {isPro && !isElite && draftId ? (
+                                  <span className="text-right text-[8px] uppercase tracking-[0.08em] text-slate-500">
+                                    {regenUsed}/{PRO_REGEN_LIMIT} regens
+                                  </span>
+                                ) : null}
                                 {shareTip?.prospectId === prospect.id ? (
                                   <p className="max-w-[14rem] text-right text-[9px] leading-snug text-emerald-400/90">
                                     {shareTip.message}
