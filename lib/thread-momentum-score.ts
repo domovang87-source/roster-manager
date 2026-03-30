@@ -4,14 +4,14 @@ export type ThreadTrailSignals = {
   inboundReactionCount: number;
   outboundRunSinceTheirText: number;
   /**
-   * Tapbacks logged in the current “your streak” window (newest-first): leading hearts after your texts,
-   * plus any reactions sandwiched between your outbound lines — excludes ancient reactions from old phases.
+   * Text reacts in the current “your streak” window (newest-first): leading reacts after your texts,
+   * plus any sandwiched between your outbound lines — excludes old-thread noise.
    */
   tapbacksDuringYourStreak: number;
 };
 
 /**
- * Raw tapbacks in streak, or inferred when reactions exist + you’re clearly carrying (parse misses, or thin inbound log).
+ * Text-react chase: streak metric and inferred chase when reacts exist + you’re clearly carrying the thread.
  */
 export function tapbackChaseMetrics(
   trail: ThreadTrailSignals | undefined,
@@ -43,7 +43,7 @@ export function tapbackChaseMetrics(
 }
 
 /**
- * One-sided stretches. When they only tapback while you send real lines, penalties are heavier (not capped at 18).
+ * One-sided stretches. When they only text-react while you send real lines, penalties are heavier (not capped at 18).
  */
 function pursuitFrictionPenalty(
   latestDirection: "inbound" | "outbound" | undefined,

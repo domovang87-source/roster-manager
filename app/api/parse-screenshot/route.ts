@@ -14,9 +14,9 @@ const getOpenAI = () => {
 function isLikelyReactionOnly(body: string): boolean {
   const trimmed = body.trim();
   if (!trimmed) return false;
-  // Common single-token reaction forms (emoji or tapback word)
-  const tapbackWords = /^(heart|liked|love|laughed|emphasized|questioned|thumbs?\s?up|thumbs?\s?down)$/i;
-  if (tapbackWords.test(trimmed)) return true;
+  // Common single-token text-react forms (emoji or system label)
+  const textReactToken = /^(heart|liked|love|laughed|emphasized|questioned|thumbs?\s?up|thumbs?\s?down)$/i;
+  if (textReactToken.test(trimmed)) return true;
   // Emoji-only line (allow spaces/joiners/variation selectors)
   const withoutEmoji = trimmed
     .replace(/[\p{Extended_Pictographic}\uFE0F\u200D\s]/gu, "")
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
             "- RIGHT-aligned bubbles (blue, green, or colored) = outbound (the user sent it)\n" +
             "- LEFT-aligned bubbles (gray, white, or plain) = inbound (the other person sent it)\n" +
             "- If bubble colors are subtle (dark mode, custom themes), use horizontal alignment only — a wrong side breaks the app’s “who texted last” logic.\n" +
-            "- Reactions/Tapbacks (heart, like, thumbs up/down, laugh, exclamation, question, emoji overlays) are NOT part of the original message text\n" +
+            "- Text reacts (heart, like, thumbs up/down, laugh, exclamation, question, emoji overlays) are NOT part of the original message text\n" +
             "- If a reaction appears, output it as a separate message event using body format: 'Reacted <emoji_or_label> to: <short quoted message>'\n" +
             "- For reactions, direction is who performed the reaction (e.g., if OTHER person heart-reacted to a RIGHT-side user bubble, that reaction direction is INBOUND)\n" +
             "- Never append reaction emoji onto the original bubble text\n" +

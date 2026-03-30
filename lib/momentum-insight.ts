@@ -33,11 +33,11 @@ export type MomentumContext = {
   cadenceFromNote?: boolean;
   latestDirection?: "inbound" | "outbound";
   latestAt?: string;
-  /** Inbound rows that are tapbacks / reactions (body starts with “Reacted …”). */
+  /** Inbound rows that are text reacts / Screen Time reaction lines, not written replies. */
   inboundReactionCount?: number;
-  /** Outbound texts in a row since their last real written line (tapbacks skipped). */
+  /** Outbound texts in a row since their last real written line (text reacts skipped). */
   outboundRunSinceTheirText?: number;
-  /** Tapbacks in the current outbound streak only (not old-thread noise). */
+  /** Text reacts logged during your current outbound streak (not old-thread noise). */
   tapbacksDuringYourStreak?: number;
 };
 
@@ -112,10 +112,9 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     const run = ctx.outboundRunSinceTheirText ?? 0;
     const ibt = ctx.inboundText ?? ctx.inbound;
     const r = ctx.inboundReactionCount ?? 0;
-    const tb = ctx.tapbacksDuringYourStreak ?? 0;
     const youVerb = ctx.cadenceFromNote ? "You logged last" : "You texted last";
     if (tapbackChaseFromContext(ctx)) {
-      return `You’re carrying it · tapbacks only · ${shortAgo(ctx.latestAt, now)}`;
+      return `You’re carrying it · text reacts only · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (ibt === 0 && r >= 1 && (ctx.outboundText ?? 0) >= 2) {
       return `They liked, didn’t type · ${shortAgo(ctx.latestAt, now)}`;
@@ -191,45 +190,45 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     const cadenceNote = ctx.cadenceFromNote === true;
     const lines: string[] = [
       cadenceNote
-        ? `${score}/100 — your last log includes real-life context (${shortAgo(ctx.lastOutboundAt, now)}); that counts toward your Style rhythm, not just DM bubbles.`
+        ? `${score}/100 — your last log reads like real-life context (${shortAgo(ctx.lastOutboundAt, now)}), which matters for the check-in pace you set under Style.`
         : `${score}/100 — you texted last ${shortAgo(ctx.lastOutboundAt, now)}.`,
     ];
     if (noteHint && ctx.noteCount && ctx.noteCount > 0) {
       const clip = noteHint.length > 140 ? `${noteHint.slice(0, 137)}…` : noteHint;
-      lines.push(`Latest note in the log: “${clip}” — momentum uses this the same way as thread lines when it’s about what actually happened.`);
+      lines.push(`You noted: “${clip}”`);
     }
 
     if (chaseCtx) {
       lines.push(
-        `They’ve answered this stretch with tapbacks, not sentences — you’re carrying the thread. The score treats that as weak reciprocity even when it feels like a “bid.”`
+        `They’ve been answering with text reacts, not real messages — you’re doing most of the work. The number comes out lower because reciprocity looks thin.`
       );
     } else if (run === 2) {
       lines.push(
         topic != null
-          ? `Since their last real line, you’ve sent 2 messages on your side; your last touches ${topic}. The score dips a little because they haven’t answered yet — not because you sent twice.`
-          : `Since their last real written line, you’ve sent 2 on your side with no reply from them yet. The nudge in the score is their silence, not you “texting too much.”`
+          ? `Since their last real line, you’ve sent 2 on your side; your last touches ${topic}. They haven’t written back yet — that’s what pulls this down, not that you texted twice.`
+          : `Since their last real line, you’ve sent 2 with no written answer yet — that silence is what pulls this down, not “texting too much.”`
       );
     } else if (run >= 3) {
       lines.push(
         topic != null
-          ? `You’ve sent ${run} messages since their last real line; your last touches ${topic} (soft-invite energy). The score reflects that they still haven’t written back — not that follow-ups are bad.`
-          : `You’ve sent ${run} messages since their last real written line with no answer from them yet — momentum dips for the one-sided stretch, not because sending more is wrong.`
+          ? `You’ve sent ${run} since their last real line; your last touches ${topic}. Still no written answer — that one-sided stretch is why this reads lower.`
+          : `You’ve sent ${run} since their last real line with no written answer — one-sided stretches read lower here.`
       );
     }
 
     if (!chaseCtx && ibt === 0 && rCount >= 1 && ob >= 2) {
       lines.push(
         rCount === 1
-          ? "They only liked a message — no written reply yet."
-          : `They reacted ${rCount} times without a real text back yet — sweet enough, but it’s light engagement.`
+          ? "They only sent a text react — no written reply yet."
+          : `${rCount} text reacts, no real line back yet — light engagement on paper.`
       );
     } else if (!chaseCtx && rCount >= 1 && run >= 3 && ibt > 0) {
       lines.push(
-        "Lately the thread’s mostly your words; they’ve leaned on reactions more than new sentences — momentum reflects that, not whether you’re “doing too much.”"
+        "Mostly your words lately; they’ve used text reacts more than new sentences — that imbalance shows up here."
       );
     } else if (ob > ibt * 2 && ibt > 0 && run < 2) {
       lines.push(
-        "You’ve out-sent them in the log overall — score ticks down a little for balance, not because you’re texting ‘too much.’"
+        "You’ve out-sent them in the log overall — that balance shows up as a small dip, not a judgment on how much you text."
       );
     }
 
@@ -240,11 +239,11 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
   if (ctx.noteCount && ctx.noteCount > 0 && noteHint) {
     const clip = noteHint.length > 120 ? `${noteHint.slice(0, 117)}…` : noteHint;
     return [
-      `${score}/100 — notes are part of the read, not an afterthought.`,
-      `Your latest note: “${clip}” If it mentions meeting, calling, or hanging out, that’s treated as you touching the connection for Style timing.`,
+      `${score}/100 — your thread is mostly in notes right now.`,
+      `Latest: “${clip}”`,
       overdue
-        ? `You’re past the ~${goal}-day window you picked on Style — unless a newer qualifying note reset it; check the timestamp on Texts.`
-        : `Timing vs Style: if you just logged something that counts as a touch (date, call, meetup), the score should reflect that.`,
+        ? `You’re past the ~${goal}-day window you set under Style — a newer log line may reset how that reads.`
+        : `If you just logged a call, date, or meetup, timing vs Style should look kinder.`,
     ];
   }
 
@@ -252,6 +251,6 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     `${score}/100 — enough in the log to read the thread.`,
     overdue
       ? `You’re past the ~${goal}-day window you picked on Style.`
-      : `Timing vs Style looks fine — if this feels wrong, a bubble may be on the wrong side in Texts.`,
+      : `If this feels off, a bubble might be on the wrong side in Texts.`,
   ];
 }

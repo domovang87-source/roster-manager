@@ -17,7 +17,7 @@ export function coerceTier(value: unknown, fallback: Tier = "B"): Tier {
 export type ThreadAgg = {
   inbound: number;
   outbound: number;
-  /** Inbound rows excluding reaction/tapback lines — balance + chattiness heuristics. */
+  /** Inbound rows excluding text-react lines — balance + chattiness heuristics. */
   inboundText: number;
   /** Virtual inbound weight from notes (voice memo, calls) — balance only, capped. */
   inboundNoteCredit: number;
@@ -28,7 +28,7 @@ export type ThreadAgg = {
   total: number;
 };
 
-/** Inbound lines that are tapbacks / Screen Time–style imports (not a written reply). */
+/** Inbound lines that are text reacts / Screen Time–style imports (not a written reply). */
 export function isReactionMessageBody(body: string): boolean {
   const t = body.trim().toLowerCase();
   if (t.length === 0) return false;
@@ -48,7 +48,7 @@ function isoMs(iso: string): number {
   return new Date(iso).getTime();
 }
 
-/** Consecutive outbound texts since their last substantive inbound; tapbacks scoped to your current streak. */
+/** Consecutive outbound texts since their last substantive inbound; text reacts scoped to your current streak. */
 export function computeThreadTrailSignals(rows: MessageRowLike[]): ThreadTrailSignals {
   let inboundReactionCount = 0;
   for (const row of rows) {
@@ -110,7 +110,7 @@ export type MomentumComputeOpts = {
   now: Date;
   latestDirection?: "inbound" | "outbound";
   lastInboundPreview?: string;
-  /** Tapback count + outbound streak since their last real line — feeds score + “Why”. */
+  /** Text-react count + outbound streak since their last real line — feeds score + copy. */
   trailSignals?: ThreadTrailSignals;
 };
 
