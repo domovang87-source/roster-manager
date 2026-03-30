@@ -5,7 +5,6 @@ import Link from "next/link";
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, CircleHelp, X } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
-import { FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
 import {
   buildProspectMomentumStateMap,
   coerceTier,
@@ -221,7 +220,7 @@ function RosterTierPie({
 
 export default function PulsePage() {
   const config = getSupabaseConfig();
-  const { isPro, checked, accountTier } = useProStatus();
+  const { accountTier } = useProStatus();
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [brief, setBrief] = React.useState("");
@@ -368,12 +367,7 @@ export default function PulsePage() {
     // Briefing (same rules as Home used to use)
     setBriefLoading(true);
     try {
-      const ac = countRes.count ?? 0;
-      if (checked && !isPro && ac >= FREE_MESSAGE_LOG_CAP) {
-        setBrief(
-          "You’ve hit the free log cap. Upgrade for unlimited logging and this briefing on every visit."
-        );
-      } else if (prospects.length === 0 || (countRes.count ?? 0) === 0) {
+      if (prospects.length === 0 || (countRes.count ?? 0) === 0) {
         setBrief("Add people and log a text thread — then this becomes a plain-English read on who needs you.");
       } else {
         const controller = new AbortController();
@@ -392,7 +386,7 @@ export default function PulsePage() {
     } finally {
       setBriefLoading(false);
     }
-  }, [checked, isPro]);
+  }, []);
 
   React.useEffect(() => {
     if (!config.urlPresent || !config.keyPresent) {
@@ -451,7 +445,7 @@ export default function PulsePage() {
             </span>
           </p>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
-            Active Charisma Score, who&apos;s waiting on you, where your attention actually went — then the paper trail.
+            Charisma Scores, who&apos;s waiting on you, where your attention actually went — then the paper trail.
           </p>
         </div>
       </header>

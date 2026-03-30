@@ -38,9 +38,9 @@ type MessageItem = {
 
 const tierOrder: Tier[] = ["A", "B", "C"];
 const tierLabels: Record<Tier, string> = {
-  A: "A-Tier",
-  B: "B-Tier",
-  C: "C-Tier",
+  A: "A-Tier · inner circle",
+  B: "B-Tier · in the mix",
+  C: "C-Tier · check-ins",
 };
 
 const emptyTierMap: Record<Tier, Prospect[]> = {

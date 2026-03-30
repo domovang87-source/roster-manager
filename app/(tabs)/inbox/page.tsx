@@ -10,7 +10,12 @@ import {
 } from "../../../lib/datetime-local";
 import { onScreenshotImportedForProspect } from "../../../lib/draft-outcome-analytics";
 import PaywallModal from "../../../components/PaywallModal";
-import { FREE_MESSAGE_LOG_CAP, freeUserOverRosterLimit } from "../../../lib/free-tier";
+import {
+  type FreeLoggingCounts,
+  fetchFreeLoggingCounts,
+  freeTierLoggingAllowed,
+  freeUserOverRosterLimit,
+} from "../../../lib/free-tier";
 import { guessProspectIdFromFilename } from "../../../lib/guess-prospect-from-filename";
 import { guessProspectIdFromThreadHint } from "../../../lib/match-prospect-from-thread-hint";
 import { useProStatus } from "../../../lib/use-pro-status";
@@ -171,7 +176,13 @@ export default function ActivityLogPage() {
   const [screenshotThreadTitle, setScreenshotThreadTitle] = React.useState<string | null>(null);
   const [screenshotMatchSource, setScreenshotMatchSource] = React.useState<"thread" | "filename" | null>(null);
   const [importToast, setImportToast] = React.useState<string | null>(null);
-  const [messageTotalCount, setMessageTotalCount] = React.useState(0);
+  const [logGate, setLogGate] = React.useState<{
+    counts: FreeLoggingCounts;
+    hasImportBatchColumn: boolean;
+  }>({
+    counts: { totalMessages: 0, distinctImportBatches: 0, manualOnlyMessages: 0 },
+    hasImportBatchColumn: true,
+  });
   const [showPaywall, setShowPaywall] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
   const { isPro, checked } = useProStatus();
@@ -183,9 +194,9 @@ export default function ActivityLogPage() {
     setShowPaywall(true);
   };
 
-  const refreshMessageCount = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
-    const { count } = await client.from("messages").select("id", { count: "exact", head: true });
-    setMessageTotalCount(count ?? 0);
+  const refreshLogGate = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
+    const snap = await fetchFreeLoggingCounts(client);
+    setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
   }, []);
 
   const loadEntries = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
@@ -273,8 +284,8 @@ export default function ActivityLogPage() {
         mapRow(row as unknown as Record<string, unknown>, !eventCol, !batchCol)
       )
     );
-    await refreshMessageCount(client);
-  }, [hasEventTypeCol, hasImportBatchCol, refreshMessageCount]);
+    await refreshLogGate(client);
+  }, [hasEventTypeCol, hasImportBatchCol, refreshLogGate]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -293,7 +304,10 @@ export default function ActivityLogPage() {
     loadEntries(client);
   }, [loadEntries]);
 
-  const logBlocked = checked && !isPro && messageTotalCount >= FREE_MESSAGE_LOG_CAP;
+  const logBlocked =
+    checked &&
+    !isPro &&
+    !freeTierLoggingAllowed(isPro, checked, logGate.counts, logGate.hasImportBatchColumn);
 
   const openLogPaywall = () => {
     setPaywallFeature("Texts");
@@ -308,7 +322,9 @@ export default function ActivityLogPage() {
       openLegacyRosterPaywall();
       return;
     }
-    if (logBlocked) {
+    const snap = await fetchFreeLoggingCounts(client);
+    setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
+    if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
       openLogPaywall();
       return;
     }
@@ -433,7 +449,9 @@ export default function ActivityLogPage() {
       openLegacyRosterPaywall();
       return;
     }
-    if (checked && !isPro && messageTotalCount + parsedMessages.length > FREE_MESSAGE_LOG_CAP) {
+    const snap = await fetchFreeLoggingCounts(client);
+    setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
+    if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
       setPaywallFeature("Screenshot import");
       setShowPaywall(true);
       return;
@@ -623,12 +641,20 @@ export default function ActivityLogPage() {
     [filtered]
   );
 
-  const tryOpenScreenshot = () => {
+  const tryOpenScreenshot = async () => {
+    const client = supabaseRef.current;
     if (legacyRosterBlock) {
       openLegacyRosterPaywall();
       return;
     }
-    if (logBlocked) {
+    if (client) {
+      const snap = await fetchFreeLoggingCounts(client);
+      setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
+      if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
+        openLogPaywall();
+        return;
+      }
+    } else if (logBlocked) {
       openLogPaywall();
       return;
     }
@@ -641,12 +667,20 @@ export default function ActivityLogPage() {
     setIsScreenshotOpen(true);
   };
 
-  const tryOpenManualLog = () => {
+  const tryOpenManualLog = async () => {
+    const client = supabaseRef.current;
     if (legacyRosterBlock) {
       openLegacyRosterPaywall();
       return;
     }
-    if (logBlocked) {
+    if (client) {
+      const snap = await fetchFreeLoggingCounts(client);
+      setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
+      if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
+        openLogPaywall();
+        return;
+      }
+    } else if (logBlocked) {
       openLogPaywall();
       return;
     }
@@ -709,7 +743,8 @@ export default function ActivityLogPage() {
       {logBlocked ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
           <span>
-            Free tier: {FREE_MESSAGE_LOG_CAP} logged events max. Upgrade for unlimited screenshots &amp; logging.
+            Free tier: one screenshot import (all bubbles in that batch) <em className="not-italic">or</em> one manual
+            log — then upgrade for unlimited logging.
           </span>
           <button
             type="button"

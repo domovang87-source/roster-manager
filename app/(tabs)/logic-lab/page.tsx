@@ -15,9 +15,9 @@ type RuleForm = {
 
 const tiers: Tier[] = ["A", "B", "C"];
 const tierLabels: Record<Tier, string> = {
-  A: "A-Tier",
-  B: "B-Tier",
-  C: "C-Tier",
+  A: "A-Tier · inner circle",
+  B: "B-Tier · in the mix",
+  C: "C-Tier · check-ins",
 };
 
 const defaultRules: Record<Tier, RuleForm> = {

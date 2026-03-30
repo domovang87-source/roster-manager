@@ -42,7 +42,8 @@ import {
 import { flattenTierProspects, isAtGhostingRisk } from "../../../lib/portfolio-stats";
 import {
   FREE_AI_DRAFTS,
-  FREE_MESSAGE_LOG_CAP,
+  fetchFreeLoggingCounts,
+  freeTierLoggingAllowed,
   freeUserOverRosterLimit,
 } from "../../../lib/free-tier";
 
@@ -730,7 +731,12 @@ export default function HomePage() {
       setShowPaywall(true);
       return;
     }
-    if (checked && !isPro && activityCount >= FREE_MESSAGE_LOG_CAP) {
+    const snap = await fetchFreeLoggingCounts(client);
+    if (
+      checked &&
+      !isPro &&
+      !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)
+    ) {
       setPaywallFeature("Unlimited logging");
       setShowPaywall(true);
       return;
@@ -1030,23 +1036,9 @@ export default function HomePage() {
 
   return (
     <div className="space-y-3 sm:space-y-8">
-      {/* Header — sign out stays top-left on mobile (not in the wrapping roster/pro cluster). */}
       <header className="relative">
-        <button
-          type="button"
-          onClick={async () => {
-            const { createBrowserSupabase } = await import("../../../lib/supabase/browser");
-            await createBrowserSupabase().auth.signOut();
-            window.location.href = "/login";
-          }}
-          className="absolute left-0 top-0 z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/80 text-[var(--rm-text-muted)] shadow-sm backdrop-blur-sm transition hover:border-[var(--rm-border)] hover:text-[var(--rm-text)] active:scale-[0.98] sm:h-9 sm:w-9"
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <LogOut size={16} strokeWidth={1.35} />
-        </button>
-        <div className="flex flex-wrap items-start justify-between gap-2 pl-12 sm:gap-4 sm:pl-11">
-        <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
+          <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
           <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
             Roster + logged texts → AI drafts. Not a calendar or birthday book.
@@ -1070,8 +1062,8 @@ export default function HomePage() {
               you&apos;re at one.
             </p>
           ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <Link
             href="/roster"
             className="border border-[var(--rm-border)] px-2.5 py-1 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.4em]"
@@ -1099,7 +1091,20 @@ export default function HomePage() {
               Upgrade
             </button>
           )}
-        </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const { createBrowserSupabase } = await import("../../../lib/supabase/browser");
+              await createBrowserSupabase().auth.signOut();
+              window.location.href = "/login";
+            }}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--rm-border)]/55 bg-[var(--rm-bg-elevated)]/55 text-[var(--rm-text-muted)] backdrop-blur-sm transition hover:border-[color:var(--rm-border)] hover:bg-[var(--rm-bg-elevated)]/85 hover:text-[var(--rm-text)] active:scale-[0.97] sm:h-7 sm:w-7"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            <LogOut size={13} strokeWidth={1.35} />
+          </button>
+          </div>
         </div>
       </header>
 
@@ -1140,7 +1145,7 @@ export default function HomePage() {
 
       {/* Onboarding step 1: no prospects yet */}
       {!hasProspects ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:p-6">
           <h2 className="text-base font-semibold tracking-wide">Add who you&apos;re texting</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
             Use the <strong className="font-medium text-[var(--rm-text)]">People</strong> tab. Mark who matters
@@ -1158,7 +1163,7 @@ export default function HomePage() {
 
       {/* Onboarding step 2: has prospects but no activity */}
       {hasProspects && !hasActivity ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-6">
+        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:p-6">
           <h2 className="text-base font-semibold tracking-wide">Add something from your texts</h2>
           <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
             Open <strong className="font-medium text-[var(--rm-text)]">Texts</strong> and either upload a
@@ -1225,7 +1230,7 @@ export default function HomePage() {
                 <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.4em]">
                   {tierLabels[tier]}
                 </p>
-                <div className="space-y-1.5 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 sm:space-y-3 sm:p-4">
+                <div className="space-y-1.5 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:space-y-3 sm:p-4">
                   {visibleProspects.map((prospect) => {
                     const draftId = prospect.draftId;
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
@@ -1258,7 +1263,7 @@ export default function HomePage() {
                           router.push(`/inbox?prospect=${encodeURIComponent(prospect.id)}`);
                         }}
                         title="Open Texts & notes for this person"
-                        className={`relative cursor-pointer border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-300 ease-out sm:p-5 ${
+                        className={`relative cursor-pointer border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 shadow-[0_4px_18px_rgba(0,0,0,0.32)] transition-opacity duration-300 ease-out sm:p-5 ${
                           dismissingDraftIds[dismissKey] ? "pointer-events-none opacity-0" : "opacity-100"
                         }`}
                       >

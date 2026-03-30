@@ -1,12 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --rm-bg: #13161a;
-  --rm-bg-elevated: #1a1e24;
-  --rm-border: #2a2e36;
-  --rm-text: #fafafa;
-  --rm-text-muted: #a8adb8;
-  --rm-accent: #ffffff;
+  /* Dark plum canvas: near-black with violet undertone — cards sit clearly above it */
+  --rm-bg: #070509;
+  --rm-bg-elevated: #141018;
+  /* Mauve-tinted stroke: lighter than old #3d2844 so borders read on dark purple */
+  --rm-border: #534458;
+  --rm-border-soft: rgba(190, 170, 210, 0.14);
+  --rm-text: #f7f5fa;
+  --rm-text-muted: #c4bccf;
+  /* Plum / magenta accents — slightly lifted for contrast on darker base */
+  --rm-accent: #c94d8a;
+  --rm-accent-muted: #a84378;
+  --rm-accent-deep: #5c2845;
 }
 
 @theme inline {

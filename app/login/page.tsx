@@ -301,10 +301,7 @@ export default function LoginPage() {
         : "Create Account";
 
   return (
-    <div
-      className="flex min-h-screen flex-col items-center justify-center px-6"
-      style={{ background: "#0b0e11" }}
-    >
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--rm-bg)] px-6">
       <div className="w-full max-w-sm">
         <div
           className={`text-center transition-all duration-[1200ms] ease-out ${
@@ -341,7 +338,7 @@ export default function LoginPage() {
               required
               autoComplete="email"
               placeholder="you@example.com"
-              className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
+              className="w-full border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40 outline-none transition focus:border-[var(--rm-accent)]"
             />
           </div>
 
@@ -360,7 +357,7 @@ export default function LoginPage() {
                     autoComplete={view === "sign_up" ? "new-password" : "current-password"}
                     placeholder="••••••••"
                     minLength={6}
-                    className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 pr-12 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
+                    className="w-full border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 pr-12 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40 outline-none transition focus:border-[var(--rm-accent)]"
                   />
                   <button
                     type="button"
@@ -390,7 +387,7 @@ export default function LoginPage() {
                     autoComplete="new-password"
                     placeholder="••••••••"
                     minLength={6}
-                    className="w-full border border-[#2a2e36] bg-[#0b0e11] px-4 py-3 text-sm text-[#fafafa] placeholder-[#444a55] outline-none transition focus:border-[#fafafa]"
+                    className="w-full border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40 outline-none transition focus:border-[var(--rm-accent)]"
                   />
                 </div>
               ) : null}
@@ -430,7 +427,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-full bg-[#fafafa] px-6 py-3 text-xs font-medium uppercase tracking-[0.3em] text-[#0b0e11] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-full bg-[var(--rm-accent)] px-6 py-3 text-xs font-medium uppercase tracking-[0.3em] text-white shadow-[0_0_20px_rgba(184,62,125,0.2)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Hold on..." : primaryLabel}
           </button>
