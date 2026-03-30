@@ -5,7 +5,7 @@ import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/c
 import { Clock, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
-import { rosterRequiresUpgradeForUi } from "../../../lib/free-tier";
+import { FREE_ROSTER_SLOTS, rosterRequiresUpgradeForUi } from "../../../lib/free-tier";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
 import { useSession } from "../../../lib/use-session";
@@ -110,6 +110,11 @@ export default function RosterPage() {
       return;
     }
 
+    if (!subscriptionChecked) {
+      setIsLoading(true);
+      return;
+    }
+
     if (!userId) {
       setIsLoading(true);
       return;
@@ -194,7 +199,7 @@ export default function RosterPage() {
     };
 
     fetchProspects();
-  }, [userId]);
+  }, [userId, subscriptionChecked]);
 
   React.useEffect(() => {
     if (!selectedProspect) {
@@ -274,6 +279,7 @@ export default function RosterPage() {
   );
 
   const handleNewProspectClick = () => {
+    if (!subscriptionChecked) return;
     if (isLoading) return;
     if (freeTierRosterFull) {
       setPaywallFeature("Unlimited roster");
@@ -291,7 +297,8 @@ export default function RosterPage() {
       setError("Name is required.");
       return;
     }
-    if (freeTierRosterFull) {
+    if (!subscriptionChecked) return;
+    if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
       setIsModalOpen(false);
@@ -526,7 +533,7 @@ export default function RosterPage() {
           </p>
           {!isPro ? (
             <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]/90">
-              Free: 1 person · more people + full AI = Pro
+              Free: 1 person on roster · 1 AI draft on Home · Pulse metrics · upgrade for unlimited
             </p>
           ) : null}
         </div>

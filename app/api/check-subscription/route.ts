@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
 
 const cookieOpts = {
   path: "/",
@@ -35,37 +36,16 @@ export async function GET(_req: Request) {
     return res;
   }
 
-  // Always check the DB — never trust the incoming cookie
-  let { data, error } = await supabase
-    .from("subscriptions")
-    .select("id, plan_tier")
-    .eq("status", "active")
-    .eq("user_id", user.id)
-    .limit(1);
-
-  if (
-    error &&
-    (error.message?.includes("plan_tier") || error.message?.includes("column"))
-  ) {
-    const fb = await supabase
-      .from("subscriptions")
-      .select("id")
-      .eq("status", "active")
-      .eq("user_id", user.id)
-      .limit(1);
-    data = fb.data as typeof data;
-    error = fb.error;
-  }
-
-  if (error) {
-    console.error("Check subscription error:", error);
-    // Can't verify — don't grant Pro, but also don't clear (might be a transient error)
+  let pro = false;
+  let elite = false;
+  try {
+    const access = await resolvePaidAccessForUser(supabase, user.id);
+    pro = access.pro;
+    elite = access.elite;
+  } catch (e) {
+    console.error("Check subscription / profiles merge:", e);
     return NextResponse.json({ pro: false, elite: false, lookupFailed: true });
   }
-
-  const row = (data ?? [])[0] as { id?: string; plan_tier?: string } | undefined;
-  const pro = Boolean(row);
-  const elite = pro && row?.plan_tier === "elite";
   const response = NextResponse.json({ pro, elite });
 
   if (pro) {

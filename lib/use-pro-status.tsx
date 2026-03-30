@@ -52,11 +52,17 @@ async function fetchSubscriptionStatus(): Promise<SubPayload> {
   };
 }
 
+export type AccountTier = "free" | "pro" | "elite";
+
 export type ProStatusContextValue = {
   isPro: boolean;
   isElite: boolean;
   checked: boolean;
+  /** Free / Pro / Elite once `checked`; null while subscription is still loading. */
+  accountTier: AccountTier | null;
   markPro: (opts?: { elite?: boolean }) => void;
+  /** Re-fetch Pro/Elite from `/api/check-subscription` (subscriptions + profiles). */
+  refreshFromServer: () => Promise<void>;
 };
 
 const ProStatusContext = createContext<ProStatusContextValue | null>(null);
@@ -69,6 +75,37 @@ export function ProStatusProvider({ children }: { children: React.ReactNode }) {
   const [isElite, setIsElite] = useState(false);
   const [checked, setChecked] = useState(false);
 
+  const applyFromServer = useCallback((payload: SubPayload) => {
+    if (payload.lookupFailed) {
+      setIsPro(false);
+      setIsElite(false);
+      setChecked(true);
+      return;
+    }
+    const pro = payload.pro;
+    const elite = payload.elite;
+    setIsPro(pro);
+    setIsElite(pro && elite);
+    if (pro) {
+      setProCache(elite);
+    } else {
+      clearProCache();
+    }
+    setChecked(true);
+  }, []);
+
+  const refreshFromServer = useCallback(async () => {
+    try {
+      const payload = await fetchSubscriptionStatus();
+      applyFromServer(payload);
+    } catch {
+      clearProCache();
+      setIsPro(false);
+      setIsElite(false);
+      setChecked(true);
+    }
+  }, [applyFromServer]);
+
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
@@ -80,31 +117,16 @@ export function ProStatusProvider({ children }: { children: React.ReactNode }) {
 
     let cancelled = false;
 
-    function applyFromServer(payload: SubPayload) {
+    function applyFromServerSafe(payload: SubPayload) {
       if (cancelled) return;
-      if (payload.lookupFailed) {
-        setIsPro(false);
-        setIsElite(false);
-        setChecked(true);
-        return;
-      }
-      const pro = payload.pro;
-      const elite = payload.elite;
-      setIsPro(pro);
-      setIsElite(pro && elite);
-      if (pro) {
-        setProCache(elite);
-      } else {
-        clearProCache();
-      }
-      setChecked(true);
+      applyFromServer(payload);
     }
 
     async function syncFromServer() {
       try {
         const payload = await fetchSubscriptionStatus();
         if (cancelled) return;
-        applyFromServer(payload);
+        applyFromServerSafe(payload);
       } catch {
         if (!cancelled) {
           clearProCache();
@@ -153,7 +175,7 @@ export function ProStatusProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [applyFromServer]);
 
   const markPro = useCallback((opts?: { elite?: boolean }) => {
     const elite = opts?.elite === true;
@@ -162,9 +184,16 @@ export function ProStatusProvider({ children }: { children: React.ReactNode }) {
     setProCache(elite);
   }, []);
 
+  const accountTier = useMemo<AccountTier | null>(() => {
+    if (!checked) return null;
+    if (isElite) return "elite";
+    if (isPro) return "pro";
+    return "free";
+  }, [checked, isPro, isElite]);
+
   const value = useMemo(
-    () => ({ isPro, isElite, checked, markPro }),
-    [isPro, isElite, checked, markPro]
+    () => ({ isPro, isElite, checked, accountTier, markPro, refreshFromServer }),
+    [isPro, isElite, checked, accountTier, markPro, refreshFromServer]
   );
 
   return <ProStatusContext.Provider value={value}>{children}</ProStatusContext.Provider>;

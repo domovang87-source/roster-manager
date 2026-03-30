@@ -28,7 +28,7 @@ type ProspectRow = {
 
 export default function PulsePage() {
   const config = getSupabaseConfig();
-  const { isPro, checked } = useProStatus();
+  const { isPro, checked, accountTier } = useProStatus();
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [brief, setBrief] = React.useState("");
@@ -184,6 +184,18 @@ export default function PulsePage() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--rm-text)] sm:text-3xl">
             How you&apos;re running it
           </h1>
+          <p className="mt-2 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">
+            Tier ·{" "}
+            <span className="text-[var(--rm-text)]">
+              {accountTier === null
+                ? "…"
+                : accountTier === "free"
+                  ? "Free"
+                  : accountTier === "pro"
+                    ? "Pro"
+                    : "Elite"}
+            </span>
+          </p>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
             Who you&apos;ve put on your roster, whether you&apos;re keeping up, and how much you&apos;re logging.
             Briefing at the bottom = plain English; Home = where you send drafts.

@@ -7,6 +7,8 @@ type Props = {
   isOpen: boolean;
   onClose: () => void;
   feature?: string;
+  /** When true: no close control, backdrop/Escape do not dismiss (hard paywall). */
+  locked?: boolean;
 };
 
 const PRO_PERKS = [
@@ -22,10 +24,10 @@ const ELITE_ONLY_PERKS = [
   "Unlimited regenerations on every draft (no 5-per-draft cap)",
   "Advanced tone styles (playful, dominant, warm, minimal, …)",
   "Early access to new features",
-  "Priority support",
+  "Priority support with Domo — direct help on your roster, drafts, and Stack (not a ticket queue)",
 ];
 
-export default function PaywallModal({ isOpen, onClose, feature }: Props) {
+export default function PaywallModal({ isOpen, onClose, feature, locked = false }: Props) {
   const [plan, setPlan] = React.useState<"yearly" | "monthly">("monthly");
   const [loading, setLoading] = React.useState<"pro" | "elite" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -37,6 +39,15 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
     window.addEventListener("pageshow", reset);
     return () => window.removeEventListener("pageshow", reset);
   }, []);
+
+  React.useEffect(() => {
+    if (!isOpen || !locked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, locked]);
 
   if (!isOpen) return null;
 
@@ -71,25 +82,38 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
     plan === "yearly" ? "$83.25 / mo · billed annually" : "cancel anytime";
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/70 px-4 py-8">
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/70 px-4 py-8"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="paywall-title"
+    >
       <div className="relative my-auto w-full max-w-2xl border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 sm:p-8">
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-3 top-3 p-1 text-[var(--rm-text-muted)]/20 transition hover:text-[var(--rm-text-muted)]/50"
-        >
-          <X size={14} strokeWidth={1.5} />
-        </button>
+        {!locked ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 p-1 text-[var(--rm-text-muted)]/20 transition hover:text-[var(--rm-text-muted)]/50"
+            aria-label="Close"
+          >
+            <X size={14} strokeWidth={1.5} />
+          </button>
+        ) : null}
 
         <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">
           {feature ? `${feature} · paid plans` : "STACK · Pro & Elite"}
         </p>
-        <h2 className="mt-1.5 text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
-          Stop leaving money<br />on the table.
+        <h2 id="paywall-title" className="mt-1.5 text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
+          Stop losing connections.
         </h2>
+        {locked ? (
+          <p className="mt-3 border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-[var(--rm-text-muted)]">
+            Your free roster is full. Upgrade to add more people, or remove someone from the roster first.
+          </p>
+        ) : null}
         <p className="mt-2 text-sm text-[var(--rm-text-muted)]">
-          Pro unlocks unlimited logging, drafts, and the daily brief — checkout takes under a minute.
+          Stack helps you stay in rhythm with the people who matter—so you actually text back (correctly), show up, and get
+          traction instead of letting good threads go cold.
         </p>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -160,6 +184,12 @@ export default function PaywallModal({ isOpen, onClose, feature }: Props) {
             <p className="text-[11px] uppercase tracking-[0.3em] text-amber-400/90">Elite</p>
             <p className="mt-3 text-lg font-semibold">{elitePrice}</p>
             <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{eliteSub}</p>
+            {plan === "monthly" ? (
+              <p className="mt-2 text-[10px] leading-snug text-amber-200/80">
+                Monthly Elite is the sweet spot if you want ongoing priority support with Domo — real answers on
+                your roster and drafts, not a help desk ticket.
+              </p>
+            ) : null}
             <div className="mt-4 flex-1 space-y-4">
               <div>
                 <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">

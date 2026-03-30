@@ -23,6 +23,10 @@ export type MomentumContext = {
   lastInboundPreview?: string;
   /** Latest outbound text body — used to mention soft invites in “Why”. */
   lastOutboundPreview?: string;
+  /** Most recent outbound note (any) — for copy when the thread story lives in notes. */
+  latestOutboundNotePreview?: string;
+  /** Style cadence anchor came from a qualifying note (meet/call/date/hangout language). */
+  cadenceFromNote?: boolean;
   latestDirection?: "inbound" | "outbound";
   latestAt?: string;
   /** Inbound rows that are tapbacks / reactions (body starts with “Reacted …”). */
@@ -88,6 +92,7 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     const run = ctx.outboundRunSinceTheirText ?? 0;
     const ibt = ctx.inboundText ?? ctx.inbound;
     const r = ctx.inboundReactionCount ?? 0;
+    const youVerb = ctx.cadenceFromNote ? "You logged last" : "You texted last";
     if (ibt === 0 && r >= 1 && (ctx.outboundText ?? 0) >= 2) {
       return `They liked, didn’t type · ${shortAgo(ctx.latestAt, now)}`;
     }
@@ -100,7 +105,7 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     if (run === 2) {
       return `2 sends, waiting on them · ${shortAgo(ctx.latestAt, now)}`;
     }
-    return `You texted last · ${shortAgo(ctx.latestAt, now)}`;
+    return `${youVerb} · ${shortAgo(ctx.latestAt, now)}`;
   }
 
   const obT = ctx.outboundText ?? ctx.outbound;
@@ -158,9 +163,17 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     const ibt = ctx.inboundText ?? 0;
     const ob = ctx.outboundText ?? 0;
     const topic = lastOutboundTopicSnippet(ctx.lastOutboundPreview);
+    const noteHint = ctx.latestOutboundNotePreview?.trim();
+    const cadenceNote = ctx.cadenceFromNote === true;
     const lines: string[] = [
-      `${score}/100 — you texted last ${shortAgo(ctx.lastOutboundAt, now)}.`,
+      cadenceNote
+        ? `${score}/100 — your last log includes real-life context (${shortAgo(ctx.lastOutboundAt, now)}); that counts toward your Style rhythm, not just DM bubbles.`
+        : `${score}/100 — you texted last ${shortAgo(ctx.lastOutboundAt, now)}.`,
     ];
+    if (noteHint && ctx.noteCount && ctx.noteCount > 0) {
+      const clip = noteHint.length > 140 ? `${noteHint.slice(0, 137)}…` : noteHint;
+      lines.push(`Latest note in the log: “${clip}” — momentum uses this the same way as thread lines when it’s about what actually happened.`);
+    }
 
     if (run === 2) {
       lines.push(
@@ -198,6 +211,18 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
 
     lines.push("Could let it sit, or send another — both can work. Pick what fits your frame.");
     return lines;
+  }
+
+  const noteHint = ctx.latestOutboundNotePreview?.trim();
+  if (ctx.noteCount && ctx.noteCount > 0 && noteHint) {
+    const clip = noteHint.length > 120 ? `${noteHint.slice(0, 117)}…` : noteHint;
+    return [
+      `${score}/100 — notes are part of the read, not an afterthought.`,
+      `Your latest note: “${clip}” If it mentions meeting, calling, or hanging out, that’s treated as you touching the connection for Style timing.`,
+      overdue
+        ? `You’re past the ~${goal}-day window you picked on Style — unless a newer qualifying note reset it; check the timestamp on Texts.`
+        : `Timing vs Style: if you just logged something that counts as a touch (date, call, meetup), the score should reflect that.`,
+    ];
   }
 
   return [

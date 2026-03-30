@@ -1,7 +1,11 @@
 import type { MomentumContext } from "./momentum-insight";
 import type { PortfolioProspect } from "./portfolio-stats";
 import { DEFAULT_REMIND_DAYS_BY_TIER, normalizeRemindDays, type RulesTier } from "./momentum-check-in";
-import { clampNoteEngagementCredit, theirEngagementCreditFromNoteBody } from "./note-engagement-signal";
+import {
+  clampNoteEngagementCredit,
+  noteCountsForStyleCadence,
+  theirEngagementCreditFromNoteBody,
+} from "./note-engagement-signal";
 import { computeThreadMomentum100 } from "./thread-momentum-score";
 
 export type Tier = "A" | "B" | "C";
@@ -141,10 +145,17 @@ export function buildProspectMomentumStateMap(
   };
 
   const latestOutboundText = new Map<string, { body: string; at: string }>();
+  /** Latest outbound row (text or note, not reaction) — drives “who logged last” for momentum copy. */
+  const latestOutboundAny = new Map<string, { body: string; at: string }>();
+  /** Latest outbound note body — surfaced in popover when notes carry the story. */
+  const latestOutboundNote = new Map<string, { body: string; at: string }>();
+  /** Best timestamp for Style cadence: all outbound texts + notes that describe real-world touch. */
+  const cadenceAnchor = new Map<string, { at: string; body: string; fromNote: boolean }>();
   const rowsByProspect = new Map<string, MessageRowLike[]>();
 
   for (const row of messageRows) {
     const pid = row.prospect_id as string;
+    const at = row.created_at as string;
     if (!rowsByProspect.has(pid)) rowsByProspect.set(pid, []);
     rowsByProspect.get(pid)!.push(row);
     const agg = bumpAgg(pid);
@@ -167,11 +178,35 @@ export function buildProspectMomentumStateMap(
         agg.inboundNoteCredit = clampNoteEngagementCredit(agg.inboundNoteCredit + add);
       }
     }
-    if (!isInbound && bodyStr.includes("Touched base")) agg.touchBaseCount += 1;
-    if (!latestActivityAt.has(pid)) {
-      latestActivityAt.set(pid, row.created_at as string);
+    if (!isInbound && !isReaction) {
+      const prevAny = latestOutboundAny.get(pid);
+      if (!prevAny || isoMs(at) > isoMs(prevAny.at)) {
+        latestOutboundAny.set(pid, { body: bodyStr, at });
+      }
+      if (isNote) {
+        const prevN = latestOutboundNote.get(pid);
+        if (!prevN || isoMs(at) > isoMs(prevN.at)) {
+          latestOutboundNote.set(pid, { body: bodyStr, at });
+        }
+      }
+      if (!isNote) {
+        const prevC = cadenceAnchor.get(pid);
+        if (!prevC || isoMs(at) > isoMs(prevC.at)) {
+          cadenceAnchor.set(pid, { at, body: bodyStr, fromNote: false });
+        }
+      } else if (noteCountsForStyleCadence(bodyStr)) {
+        const prevC = cadenceAnchor.get(pid);
+        if (!prevC || isoMs(at) > isoMs(prevC.at)) {
+          cadenceAnchor.set(pid, { at, body: bodyStr, fromNote: true });
+        }
+      }
     }
-    const at = row.created_at as string;
+    if (!isInbound && (bodyStr.includes("Touched base") || (isNote && noteCountsForStyleCadence(bodyStr)))) {
+      agg.touchBaseCount += 1;
+    }
+    if (!latestActivityAt.has(pid)) {
+      latestActivityAt.set(pid, at);
+    }
     if (isInbound && !isReaction) {
       const prev = latestInbound.get(pid);
       if (!prev || isoMs(at) > isoMs(prev.at)) {
@@ -195,29 +230,33 @@ export function buildProspectMomentumStateMap(
     const remindDays = remindByTier[tier];
     const lastOut = latestOutboundText.get(pid);
     const lastTextOut = lastOut?.at;
+    const anyOut = latestOutboundAny.get(pid);
+    const anyOutAt = anyOut?.at;
+    const cadence = cadenceAnchor.get(pid);
+    const cadenceAt = cadence?.at;
+    const noteLast = latestOutboundNote.get(pid);
     const tIn = inbound?.at;
     let latestDirection: "inbound" | "outbound" | undefined;
     let latestAt: string | undefined;
-    if (tIn && lastTextOut) {
+    if (tIn && anyOutAt) {
       const msIn = isoMs(tIn);
-      const msOut = isoMs(lastTextOut);
+      const msOut = isoMs(anyOutAt);
       if (msIn > msOut) {
         latestDirection = "inbound";
         latestAt = tIn;
       } else if (msOut > msIn) {
         latestDirection = "outbound";
-        latestAt = lastTextOut;
+        latestAt = anyOutAt;
       } else {
-        // Same timestamp (batch edge case): treat as them having the thread if both exist.
         latestDirection = "inbound";
         latestAt = tIn;
       }
     } else if (tIn) {
       latestDirection = "inbound";
       latestAt = tIn;
-    } else if (lastTextOut) {
+    } else if (anyOutAt) {
       latestDirection = "outbound";
-      latestAt = lastTextOut;
+      latestAt = anyOutAt;
     }
     const trailRows = rowsByProspect.get(pid) ?? [];
     const trailSignals = computeThreadTrailSignals(trailRows);
@@ -234,18 +273,20 @@ export function buildProspectMomentumStateMap(
           noteCount: agg.noteCount,
           touchBaseCount: agg.touchBaseCount,
           lastInboundAt: inbound?.at,
-          lastOutboundAt: lastTextOut,
+          lastOutboundAt: cadenceAt ?? lastTextOut,
           lastInboundPreview: inbound?.body,
-          lastOutboundPreview: lastOut?.body,
+          lastOutboundPreview: cadence?.body ?? lastOut?.body,
           latestDirection,
           latestAt,
+          latestOutboundNotePreview: noteLast?.body,
+          cadenceFromNote: cadence?.fromNote === true,
           inboundReactionCount: trailSignals.inboundReactionCount,
           outboundRunSinceTheirText: trailSignals.outboundRunSinceTheirText,
         }
       : undefined;
     const momentum = agg
       ? computeThreadMomentum(agg, tier, {
-          lastOutboundAt: lastTextOut,
+          lastOutboundAt: cadenceAt ?? lastTextOut,
           remindAfterDays: remindDays,
           now,
           latestDirection,

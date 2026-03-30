@@ -27,7 +27,11 @@ import {
   type ThreadAgg,
 } from "../../../lib/roster-portfolio-compute";
 import { flattenTierProspects, isAtGhostingRisk } from "../../../lib/portfolio-stats";
-import { FREE_AI_DRAFTS, FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
+import {
+  FREE_AI_DRAFTS,
+  FREE_MESSAGE_LOG_CAP,
+  freeUserOverRosterLimit,
+} from "../../../lib/free-tier";
 
 const PRO_REGEN_LIMIT = 5;
 const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
@@ -114,7 +118,7 @@ export default function HomePage() {
   const [draftToneByProspect, setDraftToneByProspect] = React.useState<Record<string, EliteToneId>>({});
   const [momentumPopoverId, setMomentumPopoverId] = React.useState<string | null>(null);
   const messagesEventTypeRef = React.useRef(true);
-  const { isPro, isElite, checked, markPro } = useProStatus();
+  const { isPro, isElite, checked, accountTier } = useProStatus();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -131,31 +135,6 @@ export default function HomePage() {
     }
     router.replace("/home", { scroll: false });
   }, [searchParams, checked, isPro, router]);
-
-  React.useEffect(() => {
-    const sessionId = searchParams.get("session_id");
-    if (!sessionId) return;
-
-    fetch("/api/verify-checkout", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
-    })
-      .then((r) => r.json())
-      .then((data: { pro?: boolean; elite?: boolean; error?: string }) => {
-        if (data.pro) {
-          markPro({ elite: data.elite === true });
-        } else if (data.error) {
-          setError(data.error);
-        }
-        router.replace("/home", { scroll: false });
-      })
-      .catch(() => {
-        setError("Could not confirm payment. If Stripe completed, check Supabase migrations and refresh.");
-        router.replace("/home", { scroll: false });
-      });
-  }, [searchParams, router, markPro]);
 
   const shareDraftText = async (text: string, prospectName: string, prospectId: string) => {
     setShareTip(null);
@@ -206,6 +185,59 @@ export default function HomePage() {
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDown);
+    };
+  }, [momentumPopoverId]);
+
+  React.useLayoutEffect(() => {
+    if (!momentumPopoverId) return;
+    const root = document.querySelector(
+      `[data-momentum-root="${CSS.escape(momentumPopoverId)}"]`
+    ) as HTMLElement | null;
+    const btn = root?.querySelector(
+      'button[type="button"][aria-haspopup="dialog"]'
+    ) as HTMLElement | null;
+    const pop = root?.querySelector("[data-momentum-popover]") as HTMLElement | null;
+    if (!root || !btn || !pop) return;
+
+    const margin = 10;
+    const maxW = 19 * 16;
+
+    const place = () => {
+      if (!pop.isConnected) return;
+      const br = btn.getBoundingClientRect();
+      const w = Math.min(maxW, window.innerWidth - 2 * margin);
+      let left = Math.max(margin, Math.min(br.left, window.innerWidth - margin - w));
+      let top = br.bottom + 6;
+      pop.style.position = "fixed";
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+      pop.style.width = `${w}px`;
+      pop.style.zIndex = "80";
+      const h = pop.getBoundingClientRect().height;
+      if (top + h > window.innerHeight - margin) {
+        top = Math.max(margin, br.top - h - 6);
+        pop.style.top = `${top}px`;
+      }
+      pop.style.opacity = "1";
+    };
+
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(pop);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      if (pop.isConnected) {
+        pop.style.removeProperty("position");
+        pop.style.removeProperty("left");
+        pop.style.removeProperty("top");
+        pop.style.removeProperty("width");
+        pop.style.removeProperty("z-index");
+        pop.style.removeProperty("opacity");
+      }
     };
   }, [momentumPopoverId]);
 
@@ -558,6 +590,10 @@ export default function HomePage() {
       return;
     }
 
+    if (!checked) {
+      return;
+    }
+
     const loadTierProspects = async () => {
       const [prospectsRes, messagesRes, draftsRes, dismissedRes, rulesRes] = await Promise.all([
         client.from("prospects").select("id,name,tier,phone_number,vibe_notes"),
@@ -670,11 +706,16 @@ export default function HomePage() {
     loadTierProspects();
     loadActivityCount();
     loadDraftsGenerated();
-  }, []);
+  }, [checked]);
 
   const handleTouchedBase = async (prospect: TierProspect, draftSummary?: string) => {
     const client = supabaseRef.current;
     if (!client) return;
+    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) {
+      setPaywallFeature("Roster over free limit");
+      setShowPaywall(true);
+      return;
+    }
     if (checked && !isPro && activityCount >= FREE_MESSAGE_LOG_CAP) {
       setPaywallFeature("Unlimited logging");
       setShowPaywall(true);
@@ -771,6 +812,16 @@ export default function HomePage() {
     opts?: { regenerate?: boolean }
   ) => {
     const regenerating = Boolean(opts?.regenerate && prospect.draftId);
+    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) {
+      setPaywallFeature("Roster over free limit");
+      setShowPaywall(true);
+      return;
+    }
+    if (regenerating && !isPro) {
+      setPaywallFeature("Regenerate draft");
+      setShowPaywall(true);
+      return;
+    }
     if (!regenerating && !isPro && draftsEverGenerated >= FREE_AI_DRAFTS) {
       setPaywallFeature("AI drafts");
       setShowPaywall(true);
@@ -807,10 +858,33 @@ export default function HomePage() {
           ...(youTextedLast ? { youTextedLast: true } : {}),
           prospectId: prospect.id,
           ...(toneStyle ? { toneStyle } : {}),
+          ...(regenerating ? { regenerate: true } : {}),
         }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: string;
+        code?: string;
+        draft?: string;
+        suggestedReply?: string;
+        autoReply?: string;
+      };
       if (!res.ok || data?.error) {
+        const code = data?.code;
+        if (
+          code === "REGENERATE_REQUIRES_PRO" ||
+          code === "DRAFT_LIMIT" ||
+          code === "ROSTER_OVER_FREE_LIMIT"
+        ) {
+          setPaywallFeature(
+            code === "REGENERATE_REQUIRES_PRO"
+              ? "Regenerate draft"
+              : code === "ROSTER_OVER_FREE_LIMIT"
+                ? "Roster over free limit"
+                : "AI drafts"
+          );
+          setShowPaywall(true);
+          return;
+        }
         setError(data?.error ?? "Failed to generate draft.");
         return;
       }
@@ -938,6 +1012,8 @@ export default function HomePage() {
     [tierProspects]
   );
 
+  const legacyRosterBlock = checked && freeUserOverRosterLimit(rosterCount, isPro);
+
   return (
     <div className="space-y-3 sm:space-y-8">
       {/* Header */}
@@ -947,6 +1023,25 @@ export default function HomePage() {
           <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
             Roster + logged texts → AI drafts. Not a calendar or birthday book.
           </p>
+          <p className="mt-2 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">
+            Tier ·{" "}
+            <span className="text-[var(--rm-text)]">
+              {accountTier === null
+                ? "…"
+                : accountTier === "free"
+                  ? "Free"
+                  : accountTier === "pro"
+                    ? "Pro"
+                    : "Elite"}
+            </span>
+          </p>
+          {legacyRosterBlock ? (
+            <p className="mt-3 max-w-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100/90">
+              Free tier is <strong className="text-[var(--rm-text)]">1 person</strong> on your roster. You have more
+              than that — upgrade to Pro to generate drafts, log texts, and import screenshots. Or remove people until
+              you&apos;re at one.
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <Link
@@ -1123,7 +1218,8 @@ export default function HomePage() {
                     const dismissKey = draftId || prospect.id;
                     const regenUsed = draftId ? (regenByDraftId[draftId] ?? 0) : 0;
                     const regenBlocked =
-                      isPro && !isElite && Boolean(draftId) && regenUsed >= PRO_REGEN_LIMIT;
+                      (!isPro && Boolean(draftId)) ||
+                      (isPro && !isElite && Boolean(draftId) && regenUsed >= PRO_REGEN_LIMIT);
                     const youTextedLast = prospect.momentumContext?.latestDirection === "outbound";
                     const clipCtx = (s: string) => (s.length > 80 ? `${s.slice(0, 80)}…` : s);
                     const stackQuoteYou =
@@ -1173,9 +1269,10 @@ export default function HomePage() {
                               </button>
                               {momentumPopoverId === prospect.id ? (
                                 <div
+                                  data-momentum-popover
                                   role="dialog"
                                   aria-label={`Momentum for ${prospect.name}`}
-                                  className="absolute right-0 top-[calc(100%+0.35rem)] z-[80] w-[min(19rem,calc(100vw-2.5rem))] border border-amber-500/30 bg-[var(--rm-bg-elevated)] p-3 text-left shadow-xl"
+                                  className="fixed z-[80] max-h-[min(70vh,calc(100dvh-2rem))] overflow-y-auto border border-amber-500/30 bg-[var(--rm-bg-elevated)] p-3 text-left opacity-0 shadow-xl transition-opacity duration-75"
                                 >
                                   <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-400/95">
                                     Momentum · {prospect.momentum ?? 0}/100 · {tierPlain[prospect.tier]}
@@ -1282,9 +1379,11 @@ export default function HomePage() {
                                     disabled={isGenerating === prospect.id || regenBlocked}
                                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
                                     title={
-                                      regenBlocked
-                                        ? `Pro: ${PRO_REGEN_LIMIT} regenerations per draft — Elite is unlimited`
-                                        : "Regenerate draft"
+                                      !isPro && draftId
+                                        ? "Regenerating requires Pro — free tier is one initial draft"
+                                        : regenBlocked
+                                          ? `Pro: ${PRO_REGEN_LIMIT} regenerations per draft — Elite is unlimited`
+                                          : "Regenerate draft"
                                     }
                                     aria-label="Regenerate draft"
                                   >
@@ -1488,7 +1587,10 @@ export default function HomePage() {
 
       <PaywallModal
         isOpen={showPaywall}
-        onClose={() => setShowPaywall(false)}
+        onClose={() => {
+          setShowPaywall(false);
+          setPaywallFeature(undefined);
+        }}
         feature={paywallFeature}
       />
     </div>

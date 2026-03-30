@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { FREE_AI_DRAFTS, FREE_ROSTER_SLOTS } from "@/lib/free-tier";
+import {
+  countOwnedProspectsForUser,
+  countScheduledDraftsForUserProspects,
+} from "@/lib/prospect-count-server";
+import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
 
 type Tier = "A" | "B" | "C";
 
@@ -15,6 +21,8 @@ type RequestBody = {
   youTextedLast?: boolean;
   /** Elite-only tone modifier (ignored when absent). */
   toneStyle?: string;
+  /** True when refreshing an existing card draft — free tier is first generation only. */
+  regenerate?: boolean;
 };
 
 const TONE_STYLE_HINTS: Record<string, string> = {
@@ -92,7 +100,16 @@ async function getActivityContext(
 
 export async function POST(req: Request) {
   const body = (await req.json()) as RequestBody;
-  const { tier, name, vibeNotes, incomingText, prospectId, toneStyle, youTextedLast } = body ?? {};
+  const {
+    tier,
+    name,
+    vibeNotes,
+    incomingText,
+    prospectId,
+    toneStyle,
+    youTextedLast,
+    regenerate,
+  } = body ?? {};
 
   if (!tier) {
     return NextResponse.json(
@@ -109,6 +126,52 @@ export async function POST(req: Request) {
       { error: "Supabase is not configured." },
       { status: 500 }
     );
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const paidAccess = await resolvePaidAccessForUser(supabase, user.id);
+  const isPro = paidAccess.pro;
+  const regenerating = regenerate === true;
+  const ownedProspects = await countOwnedProspectsForUser(supabase, user.id);
+
+  if (!isPro && ownedProspects > FREE_ROSTER_SLOTS) {
+    return NextResponse.json(
+      {
+        error:
+          "Free tier is 1 person on your roster. Upgrade to Pro to generate drafts and keep using Stack with your current roster.",
+        code: "ROSTER_OVER_FREE_LIMIT",
+      },
+      { status: 403 }
+    );
+  }
+
+  if (!isPro && regenerating) {
+    return NextResponse.json(
+      {
+        error: "Regenerating a draft requires Pro. Free tier includes one initial generation per account.",
+        code: "REGENERATE_REQUIRES_PRO",
+      },
+      { status: 403 }
+    );
+  }
+
+  if (!isPro && !regenerating) {
+    const draftCount = await countScheduledDraftsForUserProspects(supabase, user.id);
+    if (draftCount >= FREE_AI_DRAFTS) {
+      return NextResponse.json(
+        {
+          error: "Free tier includes one AI draft. Upgrade for unlimited drafts and regenerations.",
+          code: "DRAFT_LIMIT",
+        },
+        { status: 403 }
+      );
+    }
   }
 
   const openai = getOpenAIClient();
@@ -137,7 +200,8 @@ export async function POST(req: Request) {
   }
 
   const voiceProfile = ruleData?.voice_profile ?? "Confident, concise, classy.";
-  const toneKey = typeof toneStyle === "string" ? toneStyle.trim().toLowerCase() : "";
+  const toneKey =
+    paidAccess.elite && typeof toneStyle === "string" ? toneStyle.trim().toLowerCase() : "";
   const toneExtra =
     toneKey && TONE_STYLE_HINTS[toneKey] ? ` Tone override: ${TONE_STYLE_HINTS[toneKey]}` : "";
 

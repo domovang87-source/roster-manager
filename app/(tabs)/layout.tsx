@@ -1,4 +1,7 @@
+import { Suspense } from "react";
 import BottomNav from "../../components/BottomNav";
+import CheckoutReturnHandler from "../../components/CheckoutReturnHandler";
+import TabsSubscriptionShell from "../../components/TabsSubscriptionShell";
 import { ProStatusProvider } from "../../lib/use-pro-status";
 
 export default function TabsLayout({
@@ -8,10 +11,15 @@ export default function TabsLayout({
 }) {
   return (
     <ProStatusProvider>
-      <div className="min-h-[100dvh] min-h-screen pb-20">
-        <div className="mx-auto w-full max-w-5xl px-6 py-6">{children}</div>
-        <BottomNav />
-      </div>
+      <Suspense fallback={null}>
+        <CheckoutReturnHandler />
+      </Suspense>
+      <TabsSubscriptionShell>
+        <div className="min-h-[100dvh] min-h-screen pb-20">
+          <div className="mx-auto w-full max-w-5xl px-6 py-6">{children}</div>
+          <BottomNav />
+        </div>
+      </TabsSubscriptionShell>
     </ProStatusProvider>
   );
 }

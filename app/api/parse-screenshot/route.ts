@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { createServerSupabase } from "@/lib/supabase/server";
+import { FREE_ROSTER_SLOTS } from "@/lib/free-tier";
+import { countOwnedProspectsForUser } from "@/lib/prospect-count-server";
+import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
 
 const getOpenAI = () => {
   const key = process.env.OPENAI_API_KEY;
@@ -27,6 +31,33 @@ function shortenForReaction(body: string): string {
 }
 
 export async function POST(req: Request) {
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
+  try {
+    supabase = await createServerSupabase();
+  } catch {
+    return NextResponse.json({ error: "Supabase is not configured." }, { status: 500 });
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const access = await resolvePaidAccessForUser(supabase, user.id);
+  const ownedProspects = await countOwnedProspectsForUser(supabase, user.id);
+  if (!access.pro && ownedProspects > FREE_ROSTER_SLOTS) {
+    return NextResponse.json(
+      {
+        error:
+          "Your roster has more than the free limit (1 person). Upgrade to Pro to import screenshots.",
+        code: "ROSTER_OVER_FREE_LIMIT",
+      },
+      { status: 403 }
+    );
+  }
+
   const openai = getOpenAI();
   if (!openai) {
     return NextResponse.json(

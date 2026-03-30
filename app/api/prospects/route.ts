@@ -1,40 +1,9 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { FREE_ROSTER_SLOTS } from "@/lib/free-tier";
+import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
 
 type Tier = "A" | "B" | "C";
-
-async function userHasActiveSubscription(
-  supabase: Awaited<ReturnType<typeof createServerSupabase>>,
-  userId: string
-): Promise<boolean> {
-  let { data, error } = await supabase
-    .from("subscriptions")
-    .select("id")
-    .eq("status", "active")
-    .eq("user_id", userId)
-    .limit(1);
-
-  if (
-    error &&
-    (error.message?.includes("plan_tier") || error.message?.includes("column"))
-  ) {
-    const fb = await supabase
-      .from("subscriptions")
-      .select("id")
-      .eq("status", "active")
-      .eq("user_id", userId)
-      .limit(1);
-    data = fb.data;
-    error = fb.error;
-  }
-
-  if (error) {
-    console.error("prospects API subscription check:", error);
-    return false;
-  }
-  return Boolean((data ?? [])[0]);
-}
 
 export async function POST(req: Request) {
   let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
@@ -71,7 +40,7 @@ export async function POST(req: Request) {
       ? body.phone_number.trim()
       : null;
 
-  const isPro = await userHasActiveSubscription(supabase, user.id);
+  const { pro: isPro } = await resolvePaidAccessForUser(supabase, user.id);
 
   // Never use `.eq("user_id", …)` alone for the cap: legacy inserts often have user_id NULL,
   // so the DB would report 0 owned rows while the UI still shows people → unlimited adds.

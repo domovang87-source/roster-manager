@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MessageSquare, Heart, Phone, Users, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, Heart, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import {
   parseDatetimeLocalToUtcIso,
@@ -9,20 +9,22 @@ import {
 } from "../../../lib/datetime-local";
 import { onScreenshotImportedForProspect } from "../../../lib/draft-outcome-analytics";
 import PaywallModal from "../../../components/PaywallModal";
-import { FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
+import { FREE_MESSAGE_LOG_CAP, freeUserOverRosterLimit } from "../../../lib/free-tier";
 import { guessProspectIdFromFilename } from "../../../lib/guess-prospect-from-filename";
 import { guessProspectIdFromThreadHint } from "../../../lib/match-prospect-from-thread-hint";
 import { useProStatus } from "../../../lib/use-pro-status";
 
-type EventType = "text" | "date" | "hangout" | "call" | "note";
+type EventType = "text" | "note";
 
 const EVENT_CONFIG: Record<EventType, { label: string; icon: typeof MessageSquare; colorClass: string }> = {
   text: { label: "Text", icon: MessageSquare, colorClass: "text-blue-400 border-blue-400/40" },
-  date: { label: "Date", icon: Heart, colorClass: "text-rose-400 border-rose-400/40" },
-  hangout: { label: "Hung out", icon: Users, colorClass: "text-amber-400 border-amber-400/40" },
-  call: { label: "Call", icon: Phone, colorClass: "text-emerald-400 border-emerald-400/40" },
   note: { label: "Note", icon: StickyNote, colorClass: "text-purple-400 border-purple-400/40" },
 };
+
+/** Older rows used date / call / hangout / etc. — treat like thread context unless it’s a real note. */
+function normalizeEventType(raw: string | null | undefined): EventType {
+  return raw === "note" ? "note" : "text";
+}
 
 type Prospect = { id: string; name: string; tier: string };
 
@@ -155,6 +157,13 @@ export default function ActivityLogPage() {
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
   const { isPro, checked } = useProStatus();
 
+  const legacyRosterBlock = checked && freeUserOverRosterLimit(prospects.length, isPro);
+
+  const openLegacyRosterPaywall = () => {
+    setPaywallFeature("Roster over free limit");
+    setShowPaywall(true);
+  };
+
   const refreshMessageCount = React.useCallback(async (client: NonNullable<ReturnType<typeof getSupabaseClient>>) => {
     const { count } = await client.from("messages").select("id", { count: "exact", head: true });
     setMessageTotalCount(count ?? 0);
@@ -171,7 +180,7 @@ export default function ActivityLogPage() {
         id: row.id as string,
         prospectId: row.prospect_id as string,
         prospectName: (prospect?.name as string) || "Unknown",
-        eventType: (eventFallback ? "text" : (row.event_type as EventType)) || "text",
+        eventType: eventFallback ? "text" : normalizeEventType(row.event_type as string),
         direction: (row.direction as "inbound" | "outbound") || "outbound",
         body: (row.body as string) || "",
         createdAt: row.created_at as string,
@@ -276,6 +285,10 @@ export default function ActivityLogPage() {
   const handleLogEntry = async () => {
     const client = supabaseRef.current;
     if (!client) return;
+    if (legacyRosterBlock) {
+      openLegacyRosterPaywall();
+      return;
+    }
     if (logBlocked) {
       openLogPaywall();
       return;
@@ -316,6 +329,15 @@ export default function ActivityLogPage() {
 
   // Screenshot handlers
   const runScreenshotParse = React.useCallback(async (file: File) => {
+    if (checked && freeUserOverRosterLimit(prospects.length, isPro)) {
+      setScreenshotError(
+        "Free tier is 1 person on your roster. Upgrade to Pro to import screenshots, or remove people until you’re at one."
+      );
+      setScreenshotThreadTitle(null);
+      setScreenshotMatchSource(null);
+      setParsedMessages([]);
+      return;
+    }
     setIsParsing(true);
     setScreenshotError(null);
     setParsedMessages([]);
@@ -324,7 +346,11 @@ export default function ActivityLogPage() {
     formData.append("image", file);
 
     try {
-      const res = await fetch("/api/parse-screenshot", { method: "POST", body: formData });
+      const res = await fetch("/api/parse-screenshot", {
+        method: "POST",
+        credentials: "same-origin",
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok || data.error) {
         setScreenshotError(data.error ?? "Failed to read screenshot");
@@ -366,7 +392,7 @@ export default function ActivityLogPage() {
     } finally {
       setIsParsing(false);
     }
-  }, [prospects]);
+  }, [prospects, checked, isPro]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -384,6 +410,10 @@ export default function ActivityLogPage() {
   const handleSaveScreenshotMessages = async () => {
     const client = supabaseRef.current;
     if (!client || !screenshotProspectId || parsedMessages.length === 0) return;
+    if (legacyRosterBlock) {
+      openLegacyRosterPaywall();
+      return;
+    }
     if (checked && !isPro && messageTotalCount + parsedMessages.length > FREE_MESSAGE_LOG_CAP) {
       setPaywallFeature("Screenshot import");
       setShowPaywall(true);
@@ -479,7 +509,7 @@ export default function ActivityLogPage() {
   const handleOpenEditEntry = (entry: LogEntry) => {
     setEditingEntryId(entry.id);
     setEditProspectId(entry.prospectId);
-    setEditType(entry.eventType);
+    setEditType(normalizeEventType(entry.eventType));
     setEditBody(entry.body);
     setEditDirection(entry.direction === "inbound" ? "inbound" : "outbound");
     setEditWhen(toLocalDatetimeInputValue(new Date(entry.createdAt)));
@@ -575,6 +605,10 @@ export default function ActivityLogPage() {
   );
 
   const tryOpenScreenshot = () => {
+    if (legacyRosterBlock) {
+      openLegacyRosterPaywall();
+      return;
+    }
     if (logBlocked) {
       openLogPaywall();
       return;
@@ -589,6 +623,10 @@ export default function ActivityLogPage() {
   };
 
   const tryOpenManualLog = () => {
+    if (legacyRosterBlock) {
+      openLegacyRosterPaywall();
+      return;
+    }
     if (logBlocked) {
       openLogPaywall();
       return;
@@ -606,7 +644,8 @@ export default function ActivityLogPage() {
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-wide">Your texts</h1>
           <p className="text-sm text-[var(--rm-text-muted)]">
-            Screenshot a chat or add a quick note. Home uses this so drafts match what actually happened.
+            Upload a screenshot of the thread or type what happened (text vs note — same goal: context so Home and the
+            AI know what’s real).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -628,6 +667,22 @@ export default function ActivityLogPage() {
           </button>
         </div>
       </header>
+
+      {legacyRosterBlock ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100/95">
+          <span>
+            You have more than <strong className="text-[var(--rm-text)]">1 person</strong> on your roster. Free tier
+            allows one — upgrade to keep logging and screenshot imports, or remove people until you&apos;re at one.
+          </span>
+          <button
+            type="button"
+            onClick={openLegacyRosterPaywall}
+            className="shrink-0 border border-rose-400/50 px-3 py-1.5 text-[10px] uppercase tracking-[0.25em] text-rose-100 transition hover:bg-rose-400/15"
+          >
+            Upgrade
+          </button>
+        </div>
+      ) : null}
 
       {logBlocked ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
@@ -852,7 +907,7 @@ export default function ActivityLogPage() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
           <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Log Activity</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Log text or note</h2>
               <button type="button" onClick={() => setIsLogOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>
             </div>
             <div className="mt-4 space-y-4">
@@ -871,30 +926,47 @@ export default function ActivityLogPage() {
                   {prospects.map((p) => (<option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>))}
                 </select>
               </label>
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Log as</p>
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
+                    const cfg = EVENT_CONFIG[type];
+                    const TypeIcon = cfg.icon;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setLogType(type)}
+                        className={`flex items-center gap-1.5 border px-2 py-1.5 text-[10px] uppercase tracking-[0.15em] ${
+                          logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                        }`}
+                      >
+                        <TypeIcon size={11} strokeWidth={1.25} />
+                        {cfg.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] normal-case leading-snug text-[var(--rm-text-muted)]/90">
+                  Text = thread-style context. Note = anything else you want the AI to remember (same data either way).
+                </p>
+              </div>
               <details className="rounded border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
                 <summary className="cursor-pointer text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
-                  More options · type &amp; time (defaults: text · now)
+                  When · defaults to now
                 </summary>
-                <div className="mt-3 space-y-3 border-t border-[var(--rm-border)] pt-3">
-                  <div className="space-y-1">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Type</p>
-                    <div className="flex flex-wrap gap-2">
-                      {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
-                        const cfg = EVENT_CONFIG[type];
-                        const TypeIcon = cfg.icon;
-                        return (
-                          <button key={type} type="button" onClick={() => setLogType(type)} className={`flex items-center gap-1.5 border px-2 py-1.5 text-[10px] uppercase tracking-[0.15em] ${logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"}`}>
-                            <TypeIcon size={11} strokeWidth={1.25} />{cfg.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <label className="flex flex-col gap-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                    <span className="flex items-center gap-1.5"><Calendar size={11} strokeWidth={1.25} />When</span>
-                    <input type="datetime-local" value={logWhen} onChange={(e) => setLogWhen(e.target.value)} className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-sm normal-case text-[var(--rm-text)]" />
-                  </label>
-                </div>
+                <label className="mt-3 flex flex-col gap-1 border-t border-[var(--rm-border)] pt-3 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar size={11} strokeWidth={1.25} />
+                    Time
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={logWhen}
+                    onChange={(e) => setLogWhen(e.target.value)}
+                    className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-sm normal-case text-[var(--rm-text)]"
+                  />
+                </label>
               </details>
               <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
                 <span className={!logBody.trim() && logError?.includes("details") ? "text-rose-400" : ""}>
@@ -902,7 +974,11 @@ export default function ActivityLogPage() {
                 </span>
                 <textarea
                   value={logBody} onChange={(e) => { setLogBody(e.target.value); setLogError(null); }} rows={3}
-                  placeholder={logType === "text" ? "What was the convo about?" : logType === "date" ? "Where'd you go? How was it?" : logType === "call" ? "What did you talk about?" : logType === "hangout" ? "What did you do?" : "Anything you want the AI to remember"}
+                  placeholder={
+                    logType === "text"
+                      ? "What was said or happening in the thread — paste or summarize; same idea as a screenshot import."
+                      : "What you want remembered in plain English (date, call, vibe, context) — the AI reads the words, not the label."
+                  }
                   className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${!logBody.trim() && logError?.includes("details") ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"}`}
                 />
               </label>
@@ -1108,14 +1184,22 @@ export default function ActivityLogPage() {
                 </select>
               </label>
               <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">What happened</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Log as</p>
                 <div className="flex flex-wrap gap-2">
                   {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
                     const cfg = EVENT_CONFIG[type];
                     const TypeIcon = cfg.icon;
                     return (
-                      <button key={type} type="button" onClick={() => setEditType(type)} className={`flex items-center gap-1.5 border px-3 py-2 text-xs uppercase tracking-[0.2em] ${editType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"}`}>
-                        <TypeIcon size={12} strokeWidth={1.25} />{cfg.label}
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setEditType(type)}
+                        className={`flex items-center gap-1.5 border px-3 py-2 text-xs uppercase tracking-[0.2em] ${
+                          editType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                        }`}
+                      >
+                        <TypeIcon size={12} strokeWidth={1.25} />
+                        {cfg.label}
                       </button>
                     );
                   })}
