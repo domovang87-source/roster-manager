@@ -1,7 +1,43 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { CircleUserRound, Wand2 } from "lucide-react";
+import { RosterTierPie, SocialEquityPanel } from "./PulseRosterCharts";
+import type { SocialEquityRow } from "../lib/portfolio-stats";
+import { COACH_CALENDLY_URL, COACH_PROGRAMS_URL } from "../lib/coach-links";
+
+const HERO_TAGLINES = [
+  "Your circle, curated.",
+  "Don\u2019t mess up the follow-up.",
+  "Know what to say next.",
+] as const;
+
+/** Illustrative tier split — matches the A/B/C counts shown in copy (12 total). */
+const DEMO_TIER_COUNTS = { A: 3, B: 4, C: 5 } as const;
+
+const DEMO_SOCIAL_EQUITY: SocialEquityRow[] = [
+  {
+    id: "demo-raven",
+    name: "Raven",
+    tier: "C",
+    inbound: 3,
+    outbound: 17,
+    outboundPct: 85,
+    styleLabel: "The Investor",
+    energyLeak: true,
+  },
+  {
+    id: "demo-aubrey",
+    name: "Aubrey",
+    tier: "A",
+    inbound: 7,
+    outbound: 7,
+    outboundPct: 50,
+    styleLabel: "The Volley",
+    energyLeak: false,
+  },
+];
 
 const VOLUME_CHART_MOCK = [
   { pct: 50, label: "Feb 3" },
@@ -16,6 +52,14 @@ const VOLUME_CHART_MOCK = [
 
 /** Single-scroll marketing teaser: same hero as login, Pulse + draft mocks, CTA to sign up. */
 export default function LandingMarketing() {
+  const [tagIdx, setTagIdx] = React.useState(0);
+  React.useEffect(() => {
+    const id = window.setInterval(() => {
+      setTagIdx((i) => (i + 1) % HERO_TAGLINES.length);
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[var(--rm-bg)] text-[var(--rm-text)]">
       <div className="sticky top-0 z-20 border-b border-[color:var(--rm-border)]/70 bg-[var(--rm-bg)]/92 backdrop-blur-md">
@@ -32,8 +76,8 @@ export default function LandingMarketing() {
       </div>
       <header className="mx-auto max-w-3xl px-6 pb-16 pt-10 text-center sm:pt-16">
         <h1 className="text-5xl font-light tracking-[0.5em] sm:text-6xl">STACK</h1>
-        <p className="mt-5 font-light italic tracking-[0.15em] text-[var(--rm-text-muted)]">
-          Your circle, curated.
+        <p key={tagIdx} className="mt-5 font-light italic tracking-[0.15em] text-[var(--rm-text-muted)]">
+          {HERO_TAGLINES[tagIdx]}
         </p>
         <p className="mx-auto mt-8 max-w-md text-sm leading-relaxed text-[var(--rm-text-muted)]">
           The AI-powered CRM for your social life. Track Charisma Scores, draft the perfect reply, and never let an
@@ -63,42 +107,61 @@ export default function LandingMarketing() {
           Pulse · command center
         </p>
         <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[var(--rm-text-muted)]">
-          Organize the chaos of your DMs — Charisma Scores, weekly volume, and who still needs you. See who&apos;s
-          matching your effort.
+          Active Charisma across the roster, who&apos;s waiting on you, <strong className="font-medium text-[var(--rm-text)]">roster by tier</strong>, and{" "}
+          <strong className="font-medium text-[var(--rm-text)]">social equity</strong> (them vs you in the log) — the same layout as the real Pulse tab.
         </p>
         <div className="mt-8 overflow-hidden rounded-sm border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] shadow-[0_0_0_1px_rgba(184,62,125,0.06)]">
           <div className="border-b border-[color:var(--rm-border)] px-4 py-3">
             <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Pulse</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Filter the noise — know where you stand</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Command center — portfolio vs thread balance</p>
           </div>
           <div className="grid gap-3 p-4 sm:grid-cols-2">
             <div className="border border-[color:var(--rm-accent-muted)]/35 bg-[var(--rm-accent)]/[0.07] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-accent)]">Charisma Score · roster</p>
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-accent)]">Active Charisma · roster</p>
               <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)]">
                 72<span className="ml-1 text-base font-normal text-[var(--rm-text-muted)]">/100</span>
               </p>
-              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Tap to see why you have this score</p>
+              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Average health of logged threads</p>
             </div>
             <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">On your roster</p>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">12</p>
-              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">A inner circle · B in the mix · C check-ins</p>
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Needs your reply</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-amber-400/95">1</p>
+              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">A-list · they texted last · close the loop</p>
             </div>
-            <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Texts logged (7d)</p>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">38</p>
-            </div>
-            <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Priority open loops</p>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-accent)]">1</p>
-              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">They reached out last · you haven&apos;t replied</p>
+            <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3 sm:col-span-2">
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Truth mirror · same charts as Home / Pulse</p>
+              <p className="mt-1 text-[10px] leading-snug text-[var(--rm-text-muted)]">
+                <strong className="font-medium text-[var(--rm-text)]">Portfolio</strong> (who you ranked) vs{" "}
+                <strong className="font-medium text-[var(--rm-text)]">thread balance</strong> (what you logged). Sample data
+                only.
+              </p>
+              <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-start sm:gap-5">
+                <div className="min-w-0 rounded-sm border border-[color:var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/40 p-3">
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Roster by tier</p>
+                  <div className="mt-3 flex justify-center sm:justify-start">
+                    <RosterTierPie tierCounts={{ ...DEMO_TIER_COUNTS }} />
+                  </div>
+                </div>
+                <div className="min-w-0 rounded-sm border border-[color:var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/40 p-3">
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Social equity</p>
+                  <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Highest-volume threads · them vs you</p>
+                  <SocialEquityPanel rows={DEMO_SOCIAL_EQUITY} />
+                </div>
+              </div>
             </div>
           </div>
-          <div className="border-t border-[color:var(--rm-border)] px-4 py-4">
-            <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Volume</p>
-            <p className="mt-1 text-xs font-medium text-[var(--rm-text-muted)]">Weekly momentum — where you actually showed up</p>
+          <details className="group border-t border-[color:var(--rm-border)] px-4 py-3">
+            <summary className="cursor-pointer list-none text-[11px] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)] [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center justify-between gap-2">
+                <span>Optional: raw weekly message counts (illustrative)</span>
+                <span className="text-[9px] uppercase tracking-wider text-[var(--rm-text-muted)]/70 group-open:hidden">Show</span>
+              </span>
+            </summary>
+            <p className="mt-2 text-[10px] leading-snug text-[var(--rm-text-muted)]">
+              Total texts logged per week is reference noise for most people — the scoreboard above is what you optimize.
+            </p>
             <div className="mt-4">
-              <div className="flex h-36 gap-1 rounded-b-sm bg-[var(--rm-bg)]/90 sm:h-40 sm:gap-2">
+              <div className="flex h-28 gap-1 rounded-b-sm bg-[var(--rm-bg)]/90 sm:h-32 sm:gap-2">
                 {VOLUME_CHART_MOCK.map(({ pct }, i) => (
                   <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col justify-end">
                     <div
@@ -118,7 +181,7 @@ export default function LandingMarketing() {
                 ))}
               </div>
             </div>
-          </div>
+          </details>
         </div>
       </section>
 
@@ -186,23 +249,23 @@ export default function LandingMarketing() {
       <section className="mx-auto max-w-3xl px-6 pb-24" aria-labelledby="draft-preview-heading">
         <p
           id="draft-preview-heading"
-          className="text-center text-[10px] uppercase tracking-[0.4em] text-[#6b7280]"
+          className="text-center text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)]"
         >
           Home · A-tier draft
         </p>
-        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[#9aa1ae]">
+        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[var(--rm-text-muted)]">
           They texted — you freeze on what to say. Stack pulls from your log and the voice you set per person, so you get
           something you can send, not a blank screen.
         </p>
-        <div className="mt-8 border border-[#2a2e36] bg-[#12161c] p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#2a2e36]/80 pb-3">
+        <div className="mt-8 border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color:var(--rm-border)]/80 pb-3">
             <div>
-              <p className="text-sm font-semibold text-[#e8eaef]">Raven</p>
-              <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[#6b7280]">A-Tier</p>
+              <p className="text-sm font-semibold text-[var(--rm-text)]">Raven</p>
+              <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">A-Tier</p>
             </div>
             <div className="flex items-center gap-2 rounded-full border border-amber-500/45 px-2 py-1 text-amber-100/95">
               <span className="text-[11px] font-semibold tabular-nums">78</span>
-              <span className="max-w-[5.5rem] text-[7px] font-medium leading-tight text-[#a8adb8]">
+              <span className="max-w-[5.5rem] text-[7px] font-medium leading-tight text-[var(--rm-text-muted)]">
                 Looks steady · tap
               </span>
             </div>
@@ -232,6 +295,27 @@ export default function LandingMarketing() {
         <p className="mt-6 max-w-sm mx-auto text-[11px] leading-relaxed text-[var(--rm-text-muted)]">
           Free to start · roster + Texts log + one AI draft. Curate your circle, manage the chaos, upgrade when it&apos;s
           earning its keep.
+        </p>
+        <p className="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[10px] text-[var(--rm-text-muted)]">
+          <a
+            href={COACH_PROGRAMS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-[var(--rm-border)] underline-offset-2 transition hover:text-[var(--rm-text)]"
+          >
+            Coaching &amp; programs
+          </a>
+          <span className="text-[var(--rm-text-muted)]/40" aria-hidden>
+            ·
+          </span>
+          <a
+            href={COACH_CALENDLY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-[var(--rm-border)] underline-offset-2 transition hover:text-[var(--rm-text)]"
+          >
+            Book a 1:1 session
+          </a>
         </p>
       </footer>
     </div>

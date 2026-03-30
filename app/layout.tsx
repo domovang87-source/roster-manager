@@ -23,13 +23,18 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const rmThemeInitScript = `(function(){try{var k='rm-theme',t=localStorage.getItem(k);if(t==='ink'||t==='blue')document.documentElement.setAttribute('data-rm-theme',t);else document.documentElement.removeAttribute('data-rm-theme');}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: rmThemeInitScript }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[var(--rm-bg)] text-[var(--rm-text)]`}
       >

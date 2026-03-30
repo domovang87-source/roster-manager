@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/core";
 import { Clock, Loader2, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
@@ -49,7 +50,9 @@ const emptyTierMap: Record<Tier, Prospect[]> = {
   C: [],
 };
 
-export default function RosterPage() {
+function RosterPageInner() {
+  const searchParams = useSearchParams();
+  const [flashTier, setFlashTier] = React.useState<Tier | null>(null);
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(
     null
   );
@@ -89,6 +92,38 @@ export default function RosterPage() {
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
   const [deleteConfirmStep, setDeleteConfirmStep] = React.useState(false);
   const [deletePhrase, setDeletePhrase] = React.useState("");
+
+  React.useEffect(() => {
+    const t = searchParams.get("tier");
+    if (t !== "A" && t !== "B" && t !== "C") {
+      setFlashTier(null);
+      return;
+    }
+    const tier = t as Tier;
+    setFlashTier(tier);
+    const scrollId = window.setTimeout(() => {
+      document.getElementById(`roster-tier-${tier}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 80);
+    const clearId = window.setTimeout(() => setFlashTier(null), 2800);
+    return () => {
+      window.clearTimeout(scrollId);
+      window.clearTimeout(clearId);
+    };
+  }, [searchParams]);
+
+  const rosterCommandAudit = React.useMemo(() => {
+    if (!selectedProspect || selectedProspect.tier !== "C") return null;
+    let ib = 0;
+    let ob = 0;
+    for (const m of prospectMessages) {
+      if (m.direction === "inbound") ib += 1;
+      else if (m.direction === "outbound") ob += 1;
+    }
+    if (ob >= 4 && ob > ib * 2) {
+      return "Audit: Outbound-heavy on a C-tier thread — observation mode beats pursuit until they re-engage.";
+    }
+    return null;
+  }, [selectedProspect, prospectMessages]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -565,6 +600,7 @@ export default function RosterPage() {
               tier={tier}
               label={tierLabels[tier]}
               isPriority={tier === "A"}
+              highlight={flashTier === tier}
             >
               {isLoading ? (
                 <div className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
@@ -725,7 +761,7 @@ export default function RosterPage() {
               </label>
 
               <label className="flex flex-col gap-2 text-sm">
-                Vibe Notes
+                Vibe notes (context for AI + audit)
                 <textarea
                   value={editNote}
                   onChange={(event) => setEditNote(event.target.value)}
@@ -854,11 +890,17 @@ export default function RosterPage() {
             <div className="mt-6 flex flex-1 flex-col gap-4 overflow-y-auto text-sm">
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  Vibe Notes
+                  Vibe notes · command context
                 </p>
                 <p className="text-sm text-[var(--rm-text)]">
                   {selectedProspect.note || "No notes yet."}
                 </p>
+                {rosterCommandAudit ? (
+                  <p className="border border-amber-500/35 bg-amber-950/20 px-3 py-2 text-xs leading-snug text-amber-100/90">
+                    <span className="font-semibold uppercase tracking-[0.15em] text-amber-400/95">Tactical · </span>
+                    {rosterCommandAudit}
+                  </p>
+                ) : null}
               </div>
 
               {prospectMessages.length > 0 ? (
@@ -966,30 +1008,49 @@ export default function RosterPage() {
   );
 }
 
+export default function RosterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[240px] items-center justify-center text-sm text-[var(--rm-text-muted)]">
+          Loading roster…
+        </div>
+      }
+    >
+      <RosterPageInner />
+    </Suspense>
+  );
+}
+
 function TierColumn({
   tier,
   label,
   isPriority,
+  highlight,
   children,
 }: {
   tier: Tier;
   label: string;
   isPriority: boolean;
+  highlight?: boolean;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: tier });
 
   return (
     <div
+      id={`roster-tier-${tier}`}
       ref={setNodeRef}
-      className={`min-h-[320px] border bg-[var(--rm-bg-elevated)] p-3 ${
+      className={`min-h-[320px] border bg-[var(--rm-bg-elevated)] p-3 transition-[box-shadow] duration-300 ${
         isPriority
           ? "border-[#d2b36a] shadow-[0_0_20px_rgba(210,179,106,0.15)]"
           : "border-[var(--rm-border)]"
-      } ${isOver ? "ring-1 ring-[var(--rm-text)]" : ""}`}
+      } ${isOver ? "ring-1 ring-[var(--rm-text)]" : ""} ${
+        highlight ? "ring-2 ring-amber-400/70 ring-offset-2 ring-offset-[var(--rm-bg)]" : ""
+      }`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold tracking-[0.3em]">{label}</span>
+        <span className={`text-sm font-semibold tracking-[0.3em] ${tier === "A" ? "text-amber-400/95" : "text-[var(--rm-text)]"}`}>{label}</span>
         <span className="text-[10px] uppercase text-[var(--rm-text-muted)]">
           {tier}
         </span>

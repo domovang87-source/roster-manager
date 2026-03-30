@@ -37,6 +37,11 @@ export default function CheckoutReturnHandler() {
       .then((r) => r.json())
       .then(async (data: { pro?: boolean; elite?: boolean; error?: string }) => {
         if (data.pro) {
+          try {
+            sessionStorage.setItem("stack_shadow_roster_nudge_v1", "1");
+          } catch {
+            /* private mode */
+          }
           markPro({ elite: data.elite === true });
           await refreshFromServer();
         }

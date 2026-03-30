@@ -46,9 +46,11 @@ import {
   freeTierLoggingAllowed,
   freeUserOverRosterLimit,
 } from "../../../lib/free-tier";
+import { tacticalNoteFromContext } from "../../../lib/pulse-tactical-audit";
 
 const PRO_REGEN_LIMIT = 5;
 const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
+const MARIN_DEMO_DISMISSED_KEY = "stack_marin_demo_dismissed_v1";
 
 const ELITE_TONES = [
   { id: "balanced", label: "Balanced" },
@@ -116,9 +118,22 @@ export default function HomePage() {
   const [activityCount, setActivityCount] = React.useState(0);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
   const [shareTip, setShareTip] = React.useState<{ prospectId: string; message: string } | null>(null);
+  const [marinDemoDismissed, setMarinDemoDismissed] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && localStorage.getItem(MARIN_DEMO_DISMISSED_KEY) === "1") {
+        setMarinDemoDismissed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const [error, setError] = React.useState<string | null>(null);
   const [isGenerating, setIsGenerating] = React.useState<string | null>(null);
   const [showPaywall, setShowPaywall] = React.useState(false);
+  const [showCheckoutCanceledBanner, setShowCheckoutCanceledBanner] = React.useState(false);
+  const [shadowRosterNudge, setShadowRosterNudge] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
   const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
   const [draftsEverGenerated, setDraftsEverGenerated] = React.useState(0);
@@ -149,6 +164,25 @@ export default function HomePage() {
     }
     router.replace("/home", { scroll: false });
   }, [searchParams, checked, isPro, router]);
+
+  React.useEffect(() => {
+    if (searchParams.get("canceled") !== "1") return;
+    setShowCheckoutCanceledBanner(true);
+    router.replace("/home", { scroll: false });
+  }, [searchParams, router]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !checked) return;
+    if (!isPro) return;
+    try {
+      if (sessionStorage.getItem("stack_shadow_roster_nudge_v1") === "1") {
+        sessionStorage.removeItem("stack_shadow_roster_nudge_v1");
+        setShadowRosterNudge(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [checked, isPro]);
 
   const shareDraftText = async (text: string, prospectName: string, prospectId: string) => {
     setShareTip(null);
@@ -1108,6 +1142,87 @@ export default function HomePage() {
         </div>
       </header>
 
+      {showCheckoutCanceledBanner && !isPro ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm">
+          <p className="text-amber-50/95">
+            Checkout paused — no worries. Continue when you&apos;re ready; nothing changed in your account.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCheckoutCanceledBanner(false);
+                setPaywallFeature("STACK Pro");
+                setShowPaywall(true);
+              }}
+              className="rounded-full bg-[var(--rm-text)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--rm-bg)] transition hover:opacity-90"
+            >
+              Continue to Pro
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCheckoutCanceledBanner(false)}
+              className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {shadowRosterNudge ? (
+        <div className="relative overflow-hidden rounded-lg border border-[color:var(--rm-alert)]/45 bg-[var(--rm-alert-muted)] shadow-[0_0_24px_rgba(251,191,36,0.08)]">
+          <div className="absolute left-0 top-0 h-full w-1 bg-[var(--rm-alert)]/80" aria-hidden />
+          <div className="p-4 pl-5 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-[var(--rm-alert-bright)]">
+                  Shadow roster · read this once
+                </p>
+                <h3 className="mt-1.5 text-base font-semibold text-[var(--rm-text)]">
+                  Example: <span className="text-[var(--rm-alert-bright)]">Raven</span>{" "}
+                  <span className="text-[var(--rm-text-muted)] font-normal">(C-tier)</span>
+                </h3>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
+                  If your real log looked like this — <strong className="text-[var(--rm-text)]">~85% outbound</strong>,{" "}
+                  low inbound energy — you&apos;d be bleeding attention on a check-in tier. Stack surfaces that as{" "}
+                  <span className="text-[var(--rm-alert-bright)]">social equity</span> and{" "}
+                  <span className="text-[var(--rm-alert-bright)]">energy leaks</span> once you log texts.
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="rounded border border-slate-500/50 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                    C
+                  </span>
+                  <div className="h-2 min-w-0 flex-1 max-w-xs overflow-hidden rounded-sm bg-black/50">
+                    <div className="flex h-full w-full">
+                      <div className="h-full bg-emerald-500/50" style={{ width: "15%" }} title="Them" />
+                      <div className="h-full bg-[var(--rm-alert)]/70" style={{ width: "85%" }} title="You" />
+                    </div>
+                  </div>
+                  <span className="font-mono text-[10px] text-[var(--rm-alert-bright)]">85% out</span>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2">
+                <Link
+                  href="/metrics"
+                  className="rounded-full border border-[var(--rm-alert)]/50 bg-black/30 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--rm-alert-bright)] transition hover:bg-[var(--rm-alert)]/10"
+                  onClick={() => setShadowRosterNudge(false)}
+                >
+                  Open Pulse
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShadowRosterNudge(false)}
+                  className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
           {error}
@@ -1181,6 +1296,52 @@ export default function HomePage() {
         </section>
       ) : null}
 
+      {/* Marin demo — loss leader example */}
+      {hasProspects && !hasActivity && !marinDemoDismissed ? (
+        <section className="relative border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 shadow-[0_0_0_1px_rgba(251,191,36,0.12),0_20px_50px_rgba(0,0,0,0.45)] sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Example card</p>
+              <h2 className="mt-1 text-base font-semibold tracking-wide text-[var(--rm-text)]">
+                The Loss Leader <span className="text-[var(--rm-text-muted)] font-normal">(Marin)</span>
+              </h2>
+              <p className="mt-1 text-xs text-[var(--rm-text-muted)]">
+                C-tier · ~90% your outbound · 6d since their last real line —{" "}
+                <span className="text-amber-200/90">this is what an energy leak looks like</span> before you log truth
+                in Texts.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem(MARIN_DEMO_DISMISSED_KEY, "1");
+                } catch {
+                  /* ignore */
+                }
+                setMarinDemoDismissed(true);
+              }}
+              className="shrink-0 border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:border-amber-500/40 hover:text-[var(--rm-text)]"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <span className="rounded border border-slate-500/40 px-2 py-0.5 font-mono text-[10px] text-slate-400">C</span>
+            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/40">
+              <div className="flex h-full w-full">
+                <div className="h-full bg-emerald-500/55" style={{ width: "10%" }} title="Them" />
+                <div className="h-full bg-amber-500/60" style={{ width: "90%" }} title="You" />
+              </div>
+            </div>
+            <span className="shrink-0 text-[9px] text-[var(--rm-text-muted)]">90% out</span>
+          </div>
+          <p className="mt-3 text-[10px] uppercase tracking-[0.2em] text-amber-400/85">
+            Pulse → Social equity will flag this pattern on your real roster.
+          </p>
+        </section>
+      ) : null}
+
       {/* Onboarding step 3: has activity but hasn't generated a draft yet */}
       {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
         <section className="border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
@@ -1209,13 +1370,14 @@ export default function HomePage() {
       ) : null}
 
       {hasProspects && hasActivity ? (
-        <p className="text-center text-[11px] text-[var(--rm-text-muted)] sm:text-left">
+        <p className="text-center text-[10px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
           <Link
             href="/metrics"
-            className="text-amber-400/90 underline decoration-amber-500/35 underline-offset-2 transition hover:text-amber-300"
+            className="text-amber-400/85 underline decoration-amber-500/30 underline-offset-2 transition hover:text-amber-300"
           >
-            Pulse — roster stats &amp; briefing →
-          </Link>
+            Pulse
+          </Link>{" "}
+          · charts, truth mirror, social equity
         </p>
       ) : null}
 
@@ -1227,7 +1389,11 @@ export default function HomePage() {
             if (visibleProspects.length === 0) return null;
             return (
               <section key={tier} className="space-y-1 sm:space-y-3">
-                <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] sm:text-xs sm:tracking-[0.4em]">
+                <p
+                  className={`text-[10px] uppercase tracking-[0.32em] sm:text-xs sm:tracking-[0.4em] ${
+                    tier === "A" ? "text-amber-400/95" : "text-[var(--rm-text-muted)]"
+                  }`}
+                >
                   {tierLabels[tier]}
                 </p>
                 <div className="space-y-1.5 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:space-y-3 sm:p-4">
@@ -1247,6 +1413,11 @@ export default function HomePage() {
                     const stackQuoteYouPlain = youTextedLast && !stackQuoteYou;
                     const stackQuoteThem = !youTextedLast && Boolean(prospect.lastInboundBody?.trim());
                     const hasStackContextQuote = stackQuoteYou || stackQuoteYouPlain || stackQuoteThem;
+                    const tacticalAudit = tacticalNoteFromContext(
+                      prospect.tier,
+                      prospect.momentumContext,
+                      prospect.momentum
+                    );
 
                     return (
                       <div
@@ -1351,6 +1522,18 @@ export default function HomePage() {
                             </button>
                           </div>
                         </div>
+
+                        {tacticalAudit ? (
+                          <p
+                            className="mt-2 border border-amber-500/35 bg-amber-950/20 px-2.5 py-2 text-[10px] leading-snug text-amber-100/95"
+                            data-stack-card-stop
+                          >
+                            <span className="font-semibold uppercase tracking-[0.12em] text-amber-400/95">
+                              Tactical ·{" "}
+                            </span>
+                            {tacticalAudit}
+                          </p>
+                        ) : null}
 
                         {isElite ? (
                           <div className="mt-2 border-t border-[var(--rm-border)]/50 pt-2" data-stack-card-stop>

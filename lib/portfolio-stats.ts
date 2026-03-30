@@ -92,3 +92,71 @@ export function buildPortfolioAudit(
     bTierTrending,
   };
 }
+
+export type SocialEquityRow = {
+  id: string;
+  name: string;
+  tier: "A" | "B" | "C";
+  inbound: number;
+  outbound: number;
+  /** Share of logged thread rows that are outbound, 0–100 */
+  outboundPct: number;
+  styleLabel: string;
+  /** C-tier with more 7d touches than your busiest A (requires ≥1 A on roster) */
+  energyLeak: boolean;
+};
+
+/**
+ * Thread style for Social Equity — only four buckets (plus the info modal lists the same four).
+ * Based on inbound vs outbound text lines you logged, not their personality.
+ */
+export function communicationStyleFromContext(
+  ctx: MomentumContext | undefined,
+  _momentum: number | undefined
+): string {
+  if (!ctx || ctx.total === 0) return "No read";
+
+  const ib = ctx.inboundText ?? ctx.inbound;
+  const ob = ctx.outboundText ?? ctx.outbound;
+  const lines = ib + ob;
+  if (lines < 4) return "No read";
+
+  const outShare = ob / lines;
+  if (outShare >= 0.58) return "The Investor";
+  if (outShare <= 0.42) return "The Magnet";
+  return "The Volley";
+}
+
+export function computeEnergyLeakFlag(
+  tier: "A" | "B" | "C",
+  count7d: number,
+  maxA7d: number,
+  hasATier: boolean
+): boolean {
+  return tier === "C" && hasATier && count7d > maxA7d;
+}
+
+export function buildSocialEquityRows(
+  prospects: PortfolioProspect[],
+  count7dByProspect: Map<string, number>,
+  maxA7d: number,
+  hasATier: boolean
+): SocialEquityRow[] {
+  return prospects.map((p) => {
+    const ctx = p.momentumContext;
+    const ib = ctx ? (ctx.inboundText ?? ctx.inbound) : 0;
+    const ob = ctx ? (ctx.outboundText ?? ctx.outbound) : 0;
+    const sum = ib + ob;
+    const count7d = count7dByProspect.get(p.id) ?? 0;
+    return {
+      id: p.id,
+      name: p.name,
+      tier: p.tier,
+      inbound: ib,
+      outbound: ob,
+      outboundPct: sum === 0 ? 0 : Math.round((ob / sum) * 100),
+      styleLabel: communicationStyleFromContext(ctx, p.momentum),
+      energyLeak: computeEnergyLeakFlag(p.tier, count7d, maxA7d, hasATier),
+    };
+  });
+}

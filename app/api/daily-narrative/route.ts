@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { computeEnergyLeakFlag } from "@/lib/portfolio-stats";
 
 type Tier = "A" | "B" | "C";
 
@@ -26,7 +27,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ synopsis: allClear });
+      return NextResponse.json({ synopsis: allClear, tacticalNotes: [] as string[] });
     }
 
     const [prospectsRes, messagesRes, draftsRes, rulesRes] = await Promise.all([
@@ -51,7 +52,7 @@ export async function GET() {
       } else {
         console.error("daily-narrative prospects error:", prospectsRes.error);
       }
-      return NextResponse.json({ synopsis: allClear });
+      return NextResponse.json({ synopsis: allClear, tacticalNotes: [] as string[] });
     }
 
     const prospects = prospectsRes.data ?? [];
@@ -60,7 +61,7 @@ export async function GET() {
     const rules = rulesRes.data ?? [];
 
     if (prospects.length === 0) {
-      return NextResponse.json({ synopsis: allClear });
+      return NextResponse.json({ synopsis: allClear, tacticalNotes: [] as string[] });
     }
 
     const remindDays: Record<string, number> = {};
@@ -85,6 +86,58 @@ export async function GET() {
     }
 
     const now = Date.now();
+    const nowTs = now;
+    const sevenAgoTs = nowTs - 7 * 86_400_000;
+    const count7dByProspect = new Map<string, number>();
+    for (const m of messages) {
+      const pid = String((m as { prospect_id?: string }).prospect_id ?? "");
+      if (!pid) continue;
+      const ts = new Date((m as { created_at?: string }).created_at ?? 0).getTime();
+      if (Number.isNaN(ts) || ts < sevenAgoTs) continue;
+      count7dByProspect.set(pid, (count7dByProspect.get(pid) ?? 0) + 1);
+    }
+    let maxA7d = 0;
+    for (const p of prospects) {
+      if ((p.tier as Tier) !== "A") continue;
+      maxA7d = Math.max(maxA7d, count7dByProspect.get(String(p.id)) ?? 0);
+    }
+    const hasATier = prospects.some((p) => (p.tier as Tier) === "A");
+
+    const tierById = new Map<string, Tier>();
+    for (const p of prospects) {
+      tierById.set(String(p.id), p.tier as Tier);
+    }
+    const ibObByProspect = new Map<string, { ib: number; ob: number }>();
+    for (const m of messages) {
+      const pid = String((m as { prospect_id?: string }).prospect_id ?? "");
+      if (!pid || tierById.get(pid) !== "C") continue;
+      const dir = (m as { direction?: string }).direction;
+      const cur = ibObByProspect.get(pid) ?? { ib: 0, ob: 0 };
+      if (dir === "inbound") cur.ib += 1;
+      else if (dir === "outbound") cur.ob += 1;
+      ibObByProspect.set(pid, cur);
+    }
+
+    const tacticalNotes: string[] = [];
+    for (const p of prospects) {
+      const tier = p.tier as Tier;
+      const pid = String(p.id);
+      const c7 = count7dByProspect.get(pid) ?? 0;
+      if (computeEnergyLeakFlag(tier, c7, maxA7d, hasATier)) {
+        tacticalNotes.push(
+          `⚠️ Energy leak: ${p.name as string} (C-tier) logged more touches in 7d than your busiest A — re-allocate attention.`
+        );
+      }
+      if (tier === "C") {
+        const st = ibObByProspect.get(pid);
+        if (st && st.ib + st.ob >= 4 && st.ob >= st.ib * 3 && st.ob >= 5) {
+          tacticalNotes.push(
+            `Audit: ${p.name as string} (C) is outbound-dominant in your log — observation mode beats pursuit.`
+          );
+        }
+      }
+    }
+
     const staleProspects: string[] = [];
     const activeANames: string[] = [];
 
@@ -141,9 +194,10 @@ export async function GET() {
     }
 
     const synopsis = snippets.join(" ").trim() || allClear;
-    return NextResponse.json({ synopsis });
+    const uniqueTactical = [...new Set(tacticalNotes)];
+    return NextResponse.json({ synopsis, tacticalNotes: uniqueTactical });
   } catch (err) {
     console.error("daily-narrative error:", err);
-    return NextResponse.json({ synopsis: allClear });
+    return NextResponse.json({ synopsis: allClear, tacticalNotes: [] as string[] });
   }
 }

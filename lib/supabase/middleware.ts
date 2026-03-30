@@ -43,7 +43,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && (pathname === "/login" || pathname === "/")) {
+  // Logged-in users skip login; send them to the app. They can still open "/" manually to see marketing.
+  if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/home";
     return NextResponse.redirect(url);

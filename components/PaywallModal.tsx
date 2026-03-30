@@ -19,7 +19,8 @@ const PRO_PERKS = [
   "Unlimited roster · save Logic Lab cadence & voice per tier",
 ];
 
-/** Shown under “Elite only” — Pro list is repeated above so Elite = Pro + these. */
+const PRO_HERO = PRO_PERKS.slice(0, 3);
+
 const ELITE_ONLY_PERKS = [
   "Unlimited regenerations on every draft (no 5-per-draft cap)",
   "Advanced tone styles (playful, dominant, warm, minimal, …)",
@@ -49,6 +50,10 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, locked]);
 
+  React.useEffect(() => {
+    if (isOpen) setError(null);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleSubscribe = async (tier: "pro" | "elite") => {
@@ -74,12 +79,17 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
     }
   };
 
-  const proPrice = plan === "yearly" ? "$250 / year" : "$29 / month";
+  const proPrice = plan === "yearly" ? "$250 / year" : "$29 / mo";
   const proSub =
-    plan === "yearly" ? "$20.83 / mo · billed annually" : "cancel anytime";
-  const elitePrice = plan === "yearly" ? "$999 / year" : "$99 / month";
+    plan === "yearly" ? "$20.83 / mo effective · billed once a year" : "Cancel anytime · no long contract";
+  const elitePrice = plan === "yearly" ? "$999 / year" : "$99 / mo";
   const eliteSub =
-    plan === "yearly" ? "$83.25 / mo · billed annually" : "cancel anytime";
+    plan === "yearly" ? "$83.25 / mo effective · billed annually" : "Cancel anytime";
+
+  const continueProLabel =
+    plan === "yearly" ? "Continue — $250/yr" : "Continue — $29/mo";
+  const continueEliteLabel =
+    plan === "yearly" ? "Continue — Elite yearly" : "Continue — $99/mo";
 
   return (
     <div
@@ -88,12 +98,12 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
       aria-modal="true"
       aria-labelledby="paywall-title"
     >
-      <div className="relative my-auto w-full max-w-2xl border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 sm:p-8">
+      <div className="relative my-auto w-full max-w-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 sm:p-7">
         {!locked ? (
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-3 top-3 p-1 text-[var(--rm-text-muted)]/20 transition hover:text-[var(--rm-text-muted)]/50"
+            className="absolute right-3 top-3 p-1 text-[var(--rm-text-muted)]/35 transition hover:text-[var(--rm-text-muted)]/70"
             aria-label="Close"
           >
             <X size={14} strokeWidth={1.5} />
@@ -101,10 +111,10 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
         ) : null}
 
         <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">
-          {feature ? `${feature} · paid plans` : "STACK · Pro & Elite"}
+          {feature ? `${feature}` : "STACK Pro"}
         </p>
         <h2 id="paywall-title" className="mt-1.5 text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
-          Stop losing connections.
+          Keep Stack unlimited
         </h2>
         {locked ? (
           <p className="mt-3 border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-[var(--rm-text-muted)]">
@@ -112,135 +122,97 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           </p>
         ) : null}
         <p className="mt-2 text-sm text-[var(--rm-text-muted)]">
-          Stack helps you stay in rhythm with the people who matter—so you actually text back (correctly), show up, and get
-          traction instead of letting good threads go cold.
+          One tap continues to secure checkout (cards, Apple Pay, Link when available). Same app—without caps.
         </p>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-            Billing
-          </p>
-          <div className="flex items-center rounded-full border border-[var(--rm-border)] p-0.5 text-[10px] uppercase tracking-[0.15em]">
-            <button
-              type="button"
-              onClick={() => setPlan("monthly")}
-              className={`rounded-full px-3 py-1 transition ${
-                plan === "monthly"
-                  ? "bg-emerald-500/25 font-medium text-emerald-300 ring-1 ring-emerald-500/35"
-                  : "text-[var(--rm-text-muted)] hover:text-[var(--rm-text)]"
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setPlan("yearly")}
-              className={`rounded-full px-3 py-1 transition ${
-                plan === "yearly"
-                  ? "bg-[var(--rm-text)]/10 text-[var(--rm-text)]"
-                  : "text-[var(--rm-text-muted)]/80 hover:text-[var(--rm-text-muted)]"
-              }`}
-            >
-              Yearly
-            </button>
+        <div className="mt-5 border-2 border-emerald-500/40 bg-emerald-500/[0.06] p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-emerald-400/95">Pro · recommended</p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--rm-text)]">{proPrice}</p>
+              <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{proSub}</p>
+            </div>
           </div>
-        </div>
 
-        {plan === "monthly" ? (
-          <p className="mt-2 text-[11px] leading-snug text-[var(--rm-text-muted)]">
-            <span className="text-[var(--rm-text)]">Monthly is the default</span> (Pro $29/mo, Elite $99/mo). Switch to
-            yearly if you want the lower effective rate.
-          </p>
-        ) : (
-          <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-emerald-400/80">
-            ✦ save vs monthly on annual
-          </p>
-        )}
+          <ul className="mt-4 space-y-2">
+            {PRO_HERO.map((perk) => (
+              <li key={perk} className="flex items-start gap-2.5 text-xs text-[var(--rm-text-muted)]">
+                <Check size={13} strokeWidth={2} className="mt-0.5 shrink-0 text-emerald-400" />
+                {perk}
+              </li>
+            ))}
+          </ul>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          {/* Pro — most popular */}
-          <div className="relative flex flex-col border-2 border-emerald-500/45 bg-emerald-500/[0.04] p-5">
-            <span className="absolute -top-2.5 left-4 bg-emerald-500/90 px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.2em] text-[var(--rm-bg)]">
-              Most popular
-            </span>
-            <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-400/90">Pro</p>
-            <p className="mt-3 text-lg font-semibold">{proPrice}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{proSub}</p>
-            <ul className="mt-4 flex-1 space-y-2">
-              {PRO_PERKS.map((perk) => (
-                <li key={perk} className="flex items-start gap-2.5 text-xs text-[var(--rm-text-muted)]">
-                  <Check size={13} strokeWidth={2} className="mt-0.5 shrink-0 text-emerald-400" />
+          <details className="mt-3 border-t border-emerald-500/20 pt-3">
+            <summary className="cursor-pointer text-[11px] text-emerald-200/80 transition hover:text-emerald-100">
+              Full Pro list
+            </summary>
+            <ul className="mt-2 space-y-1.5 border-l border-emerald-500/20 pl-3">
+              {PRO_PERKS.slice(3).map((perk) => (
+                <li key={perk} className="text-[11px] text-[var(--rm-text-muted)]">
                   {perk}
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              onClick={() => handleSubscribe("pro")}
-              disabled={loading !== null}
-              className="mt-5 w-full rounded-full bg-[var(--rm-text)] px-4 py-3 text-[10px] font-medium uppercase tracking-[0.28em] text-[var(--rm-bg)] transition hover:opacity-90 disabled:opacity-60"
-            >
-              {loading === "pro" ? "Loading..." : "Get Pro"}
-            </button>
-          </div>
+          </details>
 
-          {/* Elite = everything in Pro + extras */}
-          <div className="flex flex-col border border-amber-500/35 bg-amber-500/[0.03] p-5">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-amber-400/90">Elite</p>
-            <p className="mt-3 text-lg font-semibold">{elitePrice}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{eliteSub}</p>
-            {plan === "monthly" ? (
-              <p className="mt-2 text-[10px] leading-snug text-amber-200/80">
-                Monthly Elite is the sweet spot if you want ongoing priority support with Domo — real answers on
-                your roster and drafts, not a help desk ticket.
-              </p>
-            ) : null}
-            <div className="mt-4 flex-1 space-y-4">
-              <div>
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
-                  Everything in Pro
-                </p>
-                <ul className="space-y-1.5">
-                  {PRO_PERKS.map((perk) => (
-                    <li
-                      key={`elite-pro-${perk}`}
-                      className="flex items-start gap-2 text-[11px] leading-snug text-[var(--rm-text-muted)]"
-                    >
-                      <Check size={12} strokeWidth={2} className="mt-0.5 shrink-0 text-emerald-500/75" />
-                      {perk}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-amber-400/95">
-                  Elite only
-                </p>
-                <ul className="space-y-1.5">
-                  {ELITE_ONLY_PERKS.map((perk) => (
-                    <li
-                      key={perk}
-                      className="flex items-start gap-2 text-[11px] leading-snug text-[var(--rm-text-muted)]"
-                    >
-                      <Check size={12} strokeWidth={2} className="mt-0.5 shrink-0 text-amber-400" />
-                      {perk}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+          <p className="mt-4 text-[10px] leading-snug text-[var(--rm-text-muted)]">
+            Cancel anytime · Charged securely by Stripe · You can use Apple Pay or saved cards on the next screen
+          </p>
+
+          <button
+            type="button"
+            onClick={() => handleSubscribe("pro")}
+            disabled={loading !== null}
+            className="mt-4 w-full rounded-full bg-[var(--rm-text)] px-4 py-3.5 text-xs font-semibold tracking-wide text-[var(--rm-bg)] transition hover:opacity-90 disabled:opacity-60"
+          >
+            {loading === "pro" ? "Opening checkout…" : continueProLabel}
+          </button>
+
+          <p className="mt-3 text-center text-[10px] text-[var(--rm-text-muted)]">
             <button
               type="button"
-              onClick={() => handleSubscribe("elite")}
-              disabled={loading !== null}
-              className="mt-5 w-full rounded-full border border-amber-500/50 bg-transparent px-4 py-3 text-[10px] font-medium uppercase tracking-[0.28em] text-amber-200/95 transition hover:bg-amber-500/10 disabled:opacity-60"
+              onClick={() => setPlan(plan === "monthly" ? "yearly" : "monthly")}
+              className="text-emerald-400/90 underline decoration-emerald-500/35 underline-offset-2 transition hover:text-emerald-300"
             >
-              {loading === "elite" ? "Loading..." : "Get Elite"}
+              {plan === "monthly" ? "Prefer yearly? Save vs monthly →" : "← Back to monthly"}
             </button>
-          </div>
+          </p>
         </div>
 
-        {error && <p className="mt-4 text-xs text-rose-400">{error}</p>}
+        <details className="mt-4 group border border-amber-500/25 bg-amber-500/[0.04] px-4 py-3">
+          <summary className="cursor-pointer list-none text-sm font-medium text-amber-200/95 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-2">
+              <span>Elite — coaching + unlimited regen · {elitePrice}</span>
+              <span className="text-[10px] font-normal uppercase tracking-wider text-amber-200/60 group-open:hidden">
+                Optional
+              </span>
+            </span>
+          </summary>
+          <p className="mt-2 text-[11px] leading-snug text-[var(--rm-text-muted)]">{eliteSub}</p>
+          <p className="mt-2 text-[10px] text-amber-200/75">
+            Everything in Pro, plus advanced tones, unlimited regenerations per draft, and priority access to Domo for
+            roster help.
+          </p>
+          <ul className="mt-3 max-h-32 space-y-1 overflow-y-auto text-[10px] text-[var(--rm-text-muted)]">
+            {ELITE_ONLY_PERKS.map((perk) => (
+              <li key={perk} className="flex gap-2">
+                <Check size={11} className="mt-0.5 shrink-0 text-amber-400/90" strokeWidth={2} />
+                <span>{perk}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => handleSubscribe("elite")}
+            disabled={loading !== null}
+            className="mt-4 w-full rounded-full border border-amber-500/55 bg-transparent py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-100 transition hover:bg-amber-500/10 disabled:opacity-60"
+          >
+            {loading === "elite" ? "Opening checkout…" : continueEliteLabel}
+          </button>
+        </details>
+
+        {error ? <p className="mt-4 text-center text-xs text-rose-400">{error}</p> : null}
       </div>
     </div>
   );

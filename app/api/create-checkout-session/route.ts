@@ -78,6 +78,13 @@ export async function POST(req: Request) {
       cancel_url: `${base}/home?canceled=1`,
       client_reference_id: user.id,
       metadata: { supabase_user_id: user.id, plan, tier },
+      allow_promotion_codes: true,
+      custom_text: {
+        submit: {
+          message:
+            "Cancel anytime from your billing settings. Apple Pay, Link, and cards accepted — pick what feels easiest.",
+        },
+      },
     });
 
     return NextResponse.json({ url: session.url });

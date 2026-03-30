@@ -11,13 +11,19 @@ import {
   remindByTierFromRulesRows,
   type Tier,
 } from "../../../lib/roster-portfolio-compute";
-import type { PortfolioProspect } from "../../../lib/portfolio-stats";
-import { averagePortfolioMomentum, isAtGhostingRisk } from "../../../lib/portfolio-stats";
+import type { PortfolioProspect, SocialEquityRow } from "../../../lib/portfolio-stats";
+import { averagePortfolioMomentum, buildSocialEquityRows, isAtGhostingRisk } from "../../../lib/portfolio-stats";
+import { buildPulseTacticalNotes } from "../../../lib/pulse-tactical-audit";
 import { buildSocialScoreSynopsis, SOCIAL_SCORE_EXPLAINER } from "../../../lib/social-score-narrative";
 import { getIsoWeekKeyLocal } from "../../../lib/portfolio-week-storage";
 import { messagesVolumeByWeek } from "../../../lib/pulse-volume-by-week";
 import { formatIsoWeekAxisLabel, formatIsoWeekTooltipPrefix } from "../../../lib/iso-week-label";
 import { recordPulseWeekAvg, readPulseAvgHistory } from "../../../lib/pulse-avg-history";
+import { RosterTierPie, SocialEquityPanel } from "../../../components/PulseRosterCharts";
+import {
+  buildSocialEquityRowsLast7d,
+  type SocialEquityMessageRow,
+} from "../../../lib/social-equity-window";
 
 type ProspectRow = {
   id: string;
@@ -33,190 +39,6 @@ type AllocationRow = {
   /** C-tier 7d activity exceeds every A-tier person’s 7d activity (and you have at least one A). */
   leak: boolean;
 };
-
-/** Donut segment from a0→a1 radians (start at top = -π/2). */
-function donutWedgePath(cx: number, cy: number, R: number, rInner: number, a0: number, a1: number): string {
-  const x0o = cx + R * Math.cos(a0);
-  const y0o = cy + R * Math.sin(a0);
-  const x1o = cx + R * Math.cos(a1);
-  const y1o = cy + R * Math.sin(a1);
-  const x0i = cx + rInner * Math.cos(a0);
-  const y0i = cy + rInner * Math.sin(a0);
-  const x1i = cx + rInner * Math.cos(a1);
-  const y1i = cy + rInner * Math.sin(a1);
-  const largeArc = a1 - a0 > Math.PI ? 1 : 0;
-  return `M ${x0o} ${y0o} A ${R} ${R} 0 ${largeArc} 1 ${x1o} ${y1o} L ${x1i} ${y1i} A ${rInner} ${rInner} 0 ${largeArc} 0 ${x0i} ${y0i} Z`;
-}
-
-function donutFullRing(cx: number, cy: number, R: number, rInner: number): string {
-  return [
-    `M ${cx + R} ${cy}`,
-    `A ${R} ${R} 0 1 1 ${cx - R} ${cy}`,
-    `A ${R} ${R} 0 1 1 ${cx + R} ${cy}`,
-    `M ${cx + rInner} ${cy}`,
-    `A ${rInner} ${rInner} 0 1 0 ${cx - rInner} ${cy}`,
-    `A ${rInner} ${rInner} 0 1 0 ${cx + rInner} ${cy}`,
-  ].join(" ");
-}
-
-const TIER_PIE_META = [
-  { key: "A" as const, label: "A-list", dot: "bg-amber-400", fill: "rgba(245, 158, 11, 0.88)" },
-  { key: "B" as const, label: "B-tier", dot: "bg-sky-400", fill: "rgba(56, 189, 248, 0.62)" },
-  { key: "C" as const, label: "C-tier", dot: "bg-slate-400", fill: "rgba(100, 116, 139, 0.78)" },
-];
-
-/** Donut + HTML legend — avoids cramped SVG labels on wedges. */
-function RosterTierPie({
-  tierCounts,
-}: {
-  tierCounts: Record<"A" | "B" | "C", number>;
-}) {
-  const total = tierCounts.A + tierCounts.B + tierCounts.C;
-  const cx = 50;
-  const cy = 50;
-  const R = 44;
-  const rInner = 26;
-
-  const segments = TIER_PIE_META.map((m) => ({ ...m, n: tierCounts[m.key] })).filter((s) => s.n > 0);
-
-  const pieSvg = (inner: React.ReactNode) => (
-    <svg
-      viewBox="0 0 100 100"
-      className="h-[7.25rem] w-[7.25rem] shrink-0 drop-shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
-      role="img"
-      aria-label={`Roster by tier: A ${tierCounts.A}, B ${tierCounts.B}, C ${tierCounts.C}`}
-    >
-      {inner}
-      <text
-        x={cx}
-        y={cy + 1}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="pointer-events-none select-none fill-[var(--rm-text)] font-mono text-[15px] font-semibold tabular-nums"
-      >
-        {total}
-      </text>
-      <text
-        x={cx}
-        y={cy + 14}
-        textAnchor="middle"
-        className="pointer-events-none select-none fill-[var(--rm-text-muted)] text-[6.5px] font-medium uppercase tracking-[0.14em]"
-      >
-        roster
-      </text>
-    </svg>
-  );
-
-  if (total === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-5">
-        <svg viewBox="0 0 100 100" className="h-[7.25rem] w-[7.25rem] shrink-0" aria-hidden>
-          <circle cx={cx} cy={cy} r={R} fill="rgba(51, 65, 85, 0.45)" stroke="var(--rm-border)" strokeWidth={1} />
-          <circle cx={cx} cy={cy} r={rInner} fill="var(--rm-bg-elevated)" stroke="none" />
-        </svg>
-        <p className="text-xs text-[var(--rm-text-muted)]">No people yet</p>
-      </div>
-    );
-  }
-
-  if (segments.length === 1) {
-    const only = segments[0];
-    return (
-      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-5">
-        <svg
-          viewBox="0 0 100 100"
-          className="h-[7.25rem] w-[7.25rem] shrink-0 drop-shadow-[0_0_0_1px_rgba(255,255,255,0.04)]"
-          role="img"
-          aria-label={`Roster by tier: ${only.label} ${only.n}`}
-        >
-          <path
-            d={donutFullRing(cx, cy, R, rInner)}
-            fill={only.fill}
-            fillRule="evenodd"
-            stroke="var(--rm-bg)"
-            strokeWidth={1.15}
-            vectorEffect="non-scaling-stroke"
-          />
-          <text
-            x={cx}
-            y={cy - 2}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            className="pointer-events-none select-none fill-[var(--rm-text)] font-mono text-[15px] font-semibold tabular-nums"
-          >
-            {only.n}
-          </text>
-          <text
-            x={cx}
-            y={cy + 11}
-            textAnchor="middle"
-            className="pointer-events-none select-none fill-[var(--rm-text-muted)] text-[6.5px] font-medium uppercase tracking-[0.14em]"
-          >
-            {only.label}
-          </text>
-        </svg>
-        <ul className="w-full min-w-0 space-y-2 sm:max-w-[9.5rem]">
-          <li className="flex items-center justify-between gap-3 text-xs">
-            <span className="flex min-w-0 items-center gap-2 text-[var(--rm-text-muted)]">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${only.dot}`} aria-hidden />
-              <span className="truncate">{only.label}</span>
-            </span>
-            <span className="shrink-0 font-mono tabular-nums text-[var(--rm-text)]">{only.n}</span>
-          </li>
-        </ul>
-      </div>
-    );
-  }
-
-  let angle = -Math.PI / 2;
-  const pieces: { key: string; d: string; fill: string }[] = [];
-
-  for (const s of segments) {
-    const sweep = (s.n / total) * 2 * Math.PI;
-    const a0 = angle;
-    const a1 = angle + sweep;
-    pieces.push({
-      key: s.key,
-      d: donutWedgePath(cx, cy, R, rInner, a0, a1),
-      fill: s.fill,
-    });
-    angle = a1;
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:gap-5">
-      {pieSvg(
-        <>
-          {pieces.map((p) => (
-            <path
-              key={p.key}
-              d={p.d}
-              fill={p.fill}
-              stroke="var(--rm-bg)"
-              strokeWidth={1.15}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-        </>
-      )}
-      <ul className="w-full min-w-0 space-y-2 sm:max-w-[9.5rem]">
-        {TIER_PIE_META.map((m) => {
-          const n = tierCounts[m.key];
-          if (n === 0) return null;
-          return (
-            <li key={m.key} className="flex items-center justify-between gap-3 text-xs">
-              <span className="flex min-w-0 items-center gap-2 text-[var(--rm-text-muted)]">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${m.dot}`} aria-hidden />
-                <span className="truncate">{m.label}</span>
-              </span>
-              <span className="shrink-0 font-mono tabular-nums text-[var(--rm-text)]">{n}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
 
 export default function PulsePage() {
   const config = getSupabaseConfig();
@@ -238,6 +60,10 @@ export default function PulsePage() {
   const [stackInfoOpen, setStackInfoOpen] = React.useState(false);
   const [truthMirrorOpen, setTruthMirrorOpen] = React.useState(false);
   const [allocationTop5, setAllocationTop5] = React.useState<AllocationRow[]>([]);
+  const [socialEquityRows, setSocialEquityRows] = React.useState<SocialEquityRow[]>([]);
+  const [socialEquityRows7d, setSocialEquityRows7d] = React.useState<SocialEquityRow[]>([]);
+  const [briefTacticalServer, setBriefTacticalServer] = React.useState<string[]>([]);
+  const [pulseTacticalClient, setPulseTacticalClient] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     if (!stackInfoOpen && !truthMirrorOpen) return;
@@ -351,6 +177,26 @@ export default function PulsePage() {
       .slice(0, 5);
     setAllocationTop5(top5Alloc);
 
+    const eqRows = buildSocialEquityRows(portfolioProspects, count7dByProspect, maxA7d, tc.A > 0);
+    eqRows.sort((a, b) => b.inbound + b.outbound - (a.inbound + a.outbound));
+    setSocialEquityRows(eqRows.slice(0, 10));
+    const eq7d = buildSocialEquityRowsLast7d(
+      portfolioProspects,
+      fullMessages as SocialEquityMessageRow[],
+      now,
+      count7dByProspect,
+      maxA7d,
+      tc.A > 0
+    );
+    eq7d.sort((a, b) => b.inbound + b.outbound - (a.inbound + a.outbound));
+    setSocialEquityRows7d(eq7d.slice(0, 10));
+    setPulseTacticalClient(
+      buildPulseTacticalNotes(
+        prospects.map((r) => ({ id: String(r.id), tier: coerceTier(r.tier) })),
+        fullMessages as { prospect_id?: string; created_at?: string; direction?: string }[]
+      )
+    );
+
     const wk = getIsoWeekKeyLocal(now);
     recordPulseWeekAvg(wk, avg);
     const hist = readPulseAvgHistory()
@@ -369,6 +215,7 @@ export default function PulsePage() {
     try {
       if (prospects.length === 0 || (countRes.count ?? 0) === 0) {
         setBrief("Add people and log a text thread — then this becomes a plain-English read on who needs you.");
+        setBriefTacticalServer([]);
       } else {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
@@ -378,11 +225,13 @@ export default function PulsePage() {
           signal: controller.signal,
         });
         clearTimeout(timeout);
-        const data = (await res.json()) as { synopsis?: string };
+        const data = (await res.json()) as { synopsis?: string; tacticalNotes?: string[] };
         setBrief(data.synopsis ?? "Nothing to add yet.");
+        setBriefTacticalServer(data.tacticalNotes ?? []);
       }
     } catch {
       setBrief("Couldn’t load briefing. Try again in a moment.");
+      setBriefTacticalServer([]);
     } finally {
       setBriefLoading(false);
     }
@@ -406,6 +255,10 @@ export default function PulsePage() {
     () => allocationTop5.some((r) => r.leak),
     [allocationTop5]
   );
+  const mergedTacticalNotes = React.useMemo(
+    () => [...new Set([...briefTacticalServer, ...pulseTacticalClient])],
+    [briefTacticalServer, pulseTacticalClient]
+  );
 
   return (
     <div className="space-y-8 pb-4">
@@ -428,9 +281,9 @@ export default function PulsePage() {
             <ArrowLeft size={14} strokeWidth={1.25} />
             Home
           </Link>
-          <p className="text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">Pulse</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--rm-text)] sm:text-3xl">
-            How you&apos;re running it
+          <p className="font-mono text-[10px] uppercase tracking-[0.4em] text-[var(--rm-alert)]/90">Pulse · ops</p>
+          <h1 className="mt-1 border-l-2 border-[var(--rm-alert)]/55 pl-3 text-2xl font-semibold tracking-tight text-[var(--rm-text)] sm:text-3xl">
+            Command center
           </h1>
           <p className="mt-2 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">
             Tier ·{" "}
@@ -534,21 +387,20 @@ export default function PulsePage() {
               </button>
             </div>
             <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-200/85">
-              Why this matters · Social equity ROI
+              Command doctrine
             </p>
             <div className="mt-3 space-y-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
               <p>
-                Your time is your only finite resource. A high-status operator sends energy toward the people they marked
-                as priorities. If your C-tier activity in the log beats your A-tier activity, you&apos;re{" "}
-                <strong className="text-[var(--rm-text)]">leaking leverage</strong> — managing noise instead of compounding
-                signal.
+                The roster is your capital allocation sheet. When <strong className="text-amber-200/90">C-tier volume</strong>{" "}
+                outruns <strong className="text-amber-400/95">A-tier</strong> in the log, you are bleeding status — busy,
+                not powerful.
               </p>
-              <p className="text-[var(--rm-text)]">
-                Your activity doesn&apos;t match your priorities. You are over-investing in low-tier contacts. Redirect
-                your pings to your A-tier to secure your high-value leads.
+              <p className="border-l-2 border-amber-500/50 pl-3 text-[var(--rm-text)]">
+                Snap to reality: starve the bottom of the funnel. Feed the inner circle first; everyone else gets
+                observation, not pursuit.
               </p>
               <p className="text-xs text-[var(--rm-text-muted)]">
-                Stack only sees what you log under Texts — honest logs make this mirror accurate.
+                Mirror is only as honest as your Text logs — direction and timing matter.
               </p>
             </div>
           </div>
@@ -612,41 +464,58 @@ export default function PulsePage() {
                     person only.
                   </p>
                 </div>
-              ) : (
-                <p className="mt-3 text-sm text-[var(--rm-text-muted)]">
-                  Tap <span className="text-[var(--rm-text)]">Why?</span> for the story behind this number.
-                </p>
-              )}
+              ) : null}
             </div>
 
             <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-5 lg:p-6">
               <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
-                Needs your reply
+                Quick counts · reference
               </p>
-              <p className="mt-2 font-mono text-4xl font-semibold tabular-nums text-amber-400/95 sm:text-5xl">
-                {aListWaiting}
+              <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)]">
+                Ops-style totals — nice to have, not the main scoreboard. Open loops and tier split at a glance.
               </p>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
-                A-list threads where they reached out last and you haven&apos;t closed the loop yet. Zero is the flex.
-              </p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 px-3 py-3">
+                  <p className="text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">Needs reply</p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-amber-400/95 sm:text-3xl">
+                    {aListWaiting}
+                  </p>
+                  <p className="mt-1 text-[9px] leading-snug text-[var(--rm-text-muted)]">A-list · they texted last</p>
+                </div>
+                <div className="rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 px-3 py-3">
+                  <p className="text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">Roster</p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)] sm:text-3xl">
+                    {rosterTotal}
+                  </p>
+                  <p className="mt-1 font-mono text-[9px] tabular-nums text-[var(--rm-text-muted)]">
+                    A{tierCounts.A} · B{tierCounts.B} · C{tierCounts.C}
+                  </p>
+                </div>
+                <div className="rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 px-3 py-3">
+                  <p className="text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">Logs · 7 days</p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)] sm:text-3xl">
+                    {msgs7d}
+                  </p>
+                  <p className="mt-1 text-[9px] text-[var(--rm-text-muted)]">Rows logged this week</p>
+                </div>
+                <div className="rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 px-3 py-3">
+                  <p className="text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">All-time logs</p>
+                  <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)] sm:text-3xl">
+                    {activityCount}
+                  </p>
+                  <p className="mt-1 text-[9px] text-[var(--rm-text-muted)]">Total message rows</p>
+                </div>
+              </div>
               {hasEnergyLeak ? (
-                <p className="mt-4 flex items-start gap-2 border-t border-rose-500/25 pt-4 text-xs leading-snug text-rose-200/90">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400/95" strokeWidth={2} aria-hidden />
+                <p className="mt-4 flex items-start gap-2 border-t border-amber-500/30 pt-3 text-[11px] leading-snug text-amber-100/90">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400/95" strokeWidth={2} aria-hidden />
                   <span>
-                    Energy leak: someone outside your A-list logged more touches this week than your busiest A. See{" "}
+                    Energy leak: non–A-list beat your busiest A on 7d volume — see{" "}
                     <strong className="text-[var(--rm-text)]">Truth Mirror</strong> below.
                   </span>
                 </p>
               ) : null}
             </div>
-          </section>
-
-          <section className="border border-amber-500/25 bg-amber-500/[0.06] p-4 sm:p-6">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-amber-200/80">Briefing</p>
-            <h2 className="mt-1 text-base font-semibold text-[var(--rm-text)]">What to focus on</h2>
-            <p className="mt-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
-              {briefLoading ? "Loading…" : brief}
-            </p>
           </section>
 
           <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
@@ -655,7 +524,8 @@ export default function PulsePage() {
             <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
               <strong className="text-[var(--rm-text)]/90">Portfolio</strong> = who you said matters (tier).{" "}
               <strong className="text-[var(--rm-text)]/90">Allocation</strong> = where your logs went in the last 7 days.
-              Tap the charts for the full read.
+              Tap a <strong className="text-[var(--rm-text)]">pie slice</strong> to jump to that tier on{" "}
+              <strong className="text-[var(--rm-text)]">People</strong>, or tap the card for the Truth Mirror.
             </p>
             <button
               type="button"
@@ -670,7 +540,7 @@ export default function PulsePage() {
                     <p className="mt-4 text-xs text-[var(--rm-text-muted)]">No people yet</p>
                   ) : (
                     <div className="mt-3 w-full">
-                      <RosterTierPie tierCounts={tierCounts} />
+                      <RosterTierPie tierCounts={tierCounts} tierLinks />
                     </div>
                   )}
                 </div>
@@ -700,12 +570,17 @@ export default function PulsePage() {
                               <span className="flex min-w-0 items-center gap-1.5 text-[var(--rm-text)]">
                                 {row.leak ? (
                                   <AlertTriangle
-                                    className="h-3.5 w-3.5 shrink-0 text-rose-400/95"
+                                    className="h-3.5 w-3.5 shrink-0 text-amber-400/95"
                                     strokeWidth={2}
-                                    aria-label="Possible energy leak: more 7d activity than your busiest A-tier"
+                                    aria-label="Energy leak: more 7d activity than your busiest A-tier"
                                   />
                                 ) : null}
                                 <span className="truncate font-medium">{row.name}</span>
+                                {row.leak ? (
+                                  <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.1em] text-amber-300/90">
+                                    ⚠ Energy leak
+                                  </span>
+                                ) : null}
                                 <span className="shrink-0 font-mono text-[9px] text-[var(--rm-text-muted)]">
                                   {row.tier}
                                 </span>
@@ -715,7 +590,7 @@ export default function PulsePage() {
                               </span>
                             </div>
                             <div
-                              className={`mt-1 h-2 overflow-hidden rounded-sm bg-[var(--rm-bg)] ${row.leak ? "ring-1 ring-rose-500/45" : ""}`}
+                              className={`mt-1 h-2 overflow-hidden rounded-sm bg-[var(--rm-bg)] ${row.leak ? "ring-1 ring-amber-500/50" : ""}`}
                             >
                               <div className={`h-full rounded-sm ${barCls}`} style={{ width: `${w}%` }} />
                             </div>
@@ -730,6 +605,18 @@ export default function PulsePage() {
                 Tap anywhere · The Truth Mirror
               </p>
             </button>
+          </section>
+
+          <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <p className="text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Truth mirror · equity</p>
+            <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Social equity</h2>
+            <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
+              Per person: <strong className="text-emerald-400/85">green</strong> = their logged lines,{" "}
+              <strong className="text-amber-400/85">amber</strong> = yours. Toggle{" "}
+              <strong className="text-[var(--rm-text)]">Last 7 days</strong> vs{" "}
+              <strong className="text-[var(--rm-text)]">All logged</strong> to see trend vs habit.
+            </p>
+            <SocialEquityPanel rows={socialEquityRows} rows7d={socialEquityRows7d} />
           </section>
 
           <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
@@ -765,28 +652,22 @@ export default function PulsePage() {
             )}
           </section>
 
-          <section className="border border-[var(--rm-border)]/80 bg-[var(--rm-bg-elevated)]/80 p-4 sm:p-5">
-            <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Activity · reference</p>
-            <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Logging volume</h2>
-            <p className="mt-1 max-w-2xl text-xs leading-snug text-[var(--rm-text-muted)]">
-              Roster size and raw log counts — useful, but the scoreboard above is what you&apos;re actually optimizing.
-            </p>
-            <div className="mt-4 flex flex-wrap items-baseline gap-x-8 gap-y-3 border-b border-[var(--rm-border)]/60 pb-4">
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Roster</p>
-                <p className="mt-0.5 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)]">
-                  {rosterTotal}
-                </p>
-                <p className="mt-0.5 text-[10px] text-[var(--rm-text-muted)]">
-                  A {tierCounts.A} · B {tierCounts.B} · C {tierCounts.C}
-                </p>
+          <details className="group border border-[var(--rm-border)]/80 bg-[var(--rm-bg-elevated)]/60 p-4 sm:p-5">
+            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Reference only</p>
+                  <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Weekly message volume</h2>
+                  <p className="mt-1 max-w-2xl text-xs leading-snug text-[var(--rm-text-muted)]">
+                    Roster and log totals are in <strong className="text-[var(--rm-text)]">Quick counts</strong> above.
+                    Expand for the last ~8 weeks of logging habit (low signal vs the rest of Pulse).
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] group-open:hidden">
+                  Show
+                </span>
               </div>
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Logs (7d)</p>
-                <p className="mt-0.5 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)]">{msgs7d}</p>
-                <p className="mt-0.5 text-[10px] text-[var(--rm-text-muted)]">{activityCount} all-time rows</p>
-              </div>
-            </div>
+            </summary>
             {volumeWeeks.length === 0 ? (
               <p className="mt-4 text-sm text-[var(--rm-text-muted)]">No weekly bars yet — log under Texts.</p>
             ) : (
@@ -819,6 +700,29 @@ export default function PulsePage() {
                 </div>
               </div>
             )}
+          </details>
+
+          <section className="border border-amber-500/35 bg-amber-950/[0.12] p-4 shadow-[0_0_0_1px_rgba(251,191,36,0.08)] sm:p-6">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-amber-200/85">Command briefing · audit</p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-[var(--rm-text)]">Situation report</h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
+              {briefLoading ? "Loading…" : brief}
+            </p>
+            {!briefLoading && mergedTacticalNotes.length > 0 ? (
+              <div className="mt-4 space-y-2 border-t border-amber-500/25 pt-4">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Tactical notes</p>
+                <ul className="space-y-2 text-sm leading-snug text-amber-100/90">
+                  {mergedTacticalNotes.map((line, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="shrink-0 text-amber-400/90" aria-hidden>
+                        ▸
+                      </span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
         </>
       )}

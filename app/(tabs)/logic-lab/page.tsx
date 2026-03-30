@@ -1,10 +1,12 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import PaywallModal from "../../../components/PaywallModal";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useSession } from "../../../lib/use-session";
 import { useProStatus } from "../../../lib/use-pro-status";
+import { COACH_CALENDLY_URL } from "../../../lib/coach-links";
 
 type Tier = "A" | "B" | "C";
 
@@ -249,16 +251,32 @@ export default function LogicLabPage() {
         ))}
       </div>
 
-      {/* Account — buried at the bottom, as requested */}
-      <div className="pt-6">
-        <a
-          href="https://billing.stripe.com/p/login/28E14n6m6gld4nobbM2ZO00"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[10px] tracking-[0.15em] text-[var(--rm-text-muted)]/30 transition hover:text-[var(--rm-text-muted)]/60"
+      {/* Account — App settings + Stripe portal */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--rm-border)]/40 pt-6">
+        <Link
+          href="/settings"
+          className="inline-flex items-center justify-center rounded-md border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--rm-text)] shadow-[0_4px_14px_rgba(0,0,0,0.25)] transition hover:border-[var(--rm-text-muted)] active:scale-[0.98]"
         >
-          manage subscription
-        </a>
+          App settings
+        </Link>
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          <a
+            href={COACH_CALENDLY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] tracking-[0.15em] text-[var(--rm-text-muted)]/55 transition hover:text-[var(--rm-text-muted)]/90"
+          >
+            1:1 session
+          </a>
+          <a
+            href="https://billing.stripe.com/p/login/28E14n6m6gld4nobbM2ZO00"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] tracking-[0.15em] text-[var(--rm-text-muted)]/45 transition hover:text-[var(--rm-text-muted)]/80"
+          >
+            manage subscription
+          </a>
+        </div>
       </div>
 
       <PaywallModal
