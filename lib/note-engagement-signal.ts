@@ -24,11 +24,14 @@ export function theirEngagementCreditFromNoteBody(body: string): number {
   let n = 0;
 
   if (
-    /\b(voice\s*memo|voice\s*note|voice\s*message|audio\s*message|voicemail|10\s*minute|long\s+voice)\b/i.test(
+    /\b(voice\s*memo|voice\s*note|voice\s*message|audio\s*message|voicemail|10\s*minute|long\s+voice|\d+\s*min(ute)?s?\s+(voice|audio|vm|memo))\b/i.test(
       raw
     )
   ) {
     n += 4;
+  }
+  if (/\b(helped me|helping me|good advice|great advice|really listened|long message|sent a paragraph|wrote a lot)\b/i.test(b)) {
+    n += 3;
   }
   if (/\b(facetime|face\s*time|video\s*call)\b/i.test(raw)) {
     n += 3;

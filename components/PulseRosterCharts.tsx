@@ -218,58 +218,82 @@ export function SocialEquityPanel({
           <SocialEquityStyleInfo />
         </div>
       )}
-      <ul className="space-y-3.5">
-      {active.map((r) => {
-        const sum = r.inbound + r.outbound;
-        const ibPct = sum ? (r.inbound / sum) * 100 : 50;
-        const tierDot =
-          r.tier === "A" ? "text-amber-400" : r.tier === "B" ? "text-sky-400/90" : "text-slate-400";
-        return (
-          <li
-            key={r.id}
-            className={`rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 p-2.5 ${
-              r.energyLeak ? "ring-1 ring-amber-500/45" : ""
-            }`}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className={`shrink-0 font-mono text-[10px] font-semibold ${tierDot}`}>{r.tier}</span>
-                <span className="truncate font-medium text-[var(--rm-text)]">{r.name}</span>
-                {r.energyLeak ? (
-                  <span className="shrink-0 rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-amber-200/95">
-                    Energy leak
-                  </span>
-                ) : null}
-              </span>
-              <span
-                className="shrink-0 text-[10px] text-[var(--rm-text-muted)]"
-                title="Your texting pattern in what you logged — not their personality. Tap i above for definitions."
-              >
-                {r.styleLabel}
-                <span className="sr-only"> (your pattern in the log)</span>
-              </span>
-            </div>
-            <div className="mt-2 flex h-2.5 overflow-hidden rounded-sm bg-black/35">
-              <div
-                className="h-full bg-emerald-500/60"
-                style={{ width: `${ibPct}%` }}
-                title={`Them · ${r.inbound}`}
-              />
-              <div
-                className="h-full bg-amber-500/55"
-                style={{ width: `${100 - ibPct}%` }}
-                title={`You · ${r.outbound}`}
-              />
-            </div>
-            <div className="mt-1 flex justify-between font-mono text-[9px] tabular-nums text-[var(--rm-text-muted)]">
-              <span>in {r.inbound}</span>
-              <span>{r.outboundPct}% outbound</span>
-              <span>out {r.outbound}</span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] leading-snug text-[var(--rm-text-muted)]">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-[2px] bg-emerald-500/65" aria-hidden />
+          <span>Them</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-[2px] bg-amber-500/60" aria-hidden />
+          <span>You</span>
+        </span>
+        <span className="w-full text-[var(--rm-text-muted)]/85 sm:w-auto sm:pl-1">
+          Name = them · tag = <span className="text-[var(--rm-text)]/90">you</span> in the log
+        </span>
+      </p>
+      <ul className="divide-y divide-[var(--rm-border)]/35">
+        {active.map((r) => {
+          const sum = r.inbound + r.outbound;
+          const ibPct = sum ? (r.inbound / sum) * 100 : 50;
+          const tierDot =
+            r.tier === "A" ? "text-amber-400" : r.tier === "B" ? "text-sky-400/90" : "text-slate-400";
+          return (
+            <li
+              key={r.id}
+              className={`py-3 first:pt-2 ${r.energyLeak ? "border-l-2 border-amber-500/55 pl-2.5 -ml-0.5" : ""}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)]">
+                    With them
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] font-semibold tracking-tight text-[var(--rm-text)]">
+                    <span className={`shrink-0 font-mono text-[10px] font-bold ${tierDot}`}>{r.tier}</span>
+                    <span className="truncate">{r.name}</span>
+                    {r.energyLeak ? (
+                      <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-amber-200/95">
+                        Energy leak
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)]">
+                    You in the log
+                  </p>
+                  <p
+                    className="mt-0.5 text-[11px] font-medium text-[var(--rm-text)]"
+                    title="How you show up in what you saved — not their personality. Tap i for definitions."
+                  >
+                    {r.styleLabel}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-2.5 flex h-2 overflow-hidden rounded-full bg-black/30">
+                <div
+                  className="h-full bg-emerald-500/60"
+                  style={{ width: `${ibPct}%` }}
+                  title={`Them · ${r.inbound} lines`}
+                />
+                <div
+                  className="h-full bg-amber-500/58"
+                  style={{ width: `${100 - ibPct}%` }}
+                  title={`You · ${r.outbound} lines`}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between gap-2 font-mono text-[9px] tabular-nums text-[var(--rm-text-muted)]">
+                <span>
+                  Them <span className="text-emerald-400/80">{r.inbound}</span>
+                </span>
+                <span className="text-center text-[var(--rm-text-muted)]/90">{r.outboundPct}% your lines</span>
+                <span>
+                  You <span className="text-amber-400/85">{r.outbound}</span>
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

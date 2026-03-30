@@ -32,6 +32,7 @@ import { clampNoteEngagementCredit, theirEngagementCreditFromNoteBody } from "..
 import {
   buildProspectMomentumStateMap,
   coerceTier,
+  collectRecentTextBodiesForProspect,
   computeThreadMomentum,
   computeThreadTrailSignals,
   isReactionMessageBody,
@@ -530,16 +531,19 @@ export default function HomePage() {
         restoreLatestDir = "outbound";
         restoreLatestAt = restoreLastTextOut;
       }
-      const restoreTrail = computeThreadTrailSignals(
-        (msgRows as Array<{ body?: string | null; created_at: string; direction: string; event_type?: string | null; prospect_id?: string }>).map(
-          (r) => ({
-            body: r.body,
-            created_at: r.created_at,
-            direction: String(r.direction ?? ""),
-            prospect_id: String(r.prospect_id ?? draft.prospectId),
-            event_type: r.event_type,
-          })
-        )
+      const mappedMsgRows = (msgRows as Array<{ body?: string | null; created_at: string; direction: string; event_type?: string | null }>).map(
+        (r) => ({
+          body: r.body,
+          created_at: r.created_at,
+          direction: String(r.direction ?? ""),
+          prospect_id: String(draft.prospectId),
+          event_type: r.event_type,
+        })
+      );
+      const restoreTrail = computeThreadTrailSignals(mappedMsgRows);
+      const { inbound: restoreRecentIn, outbound: restoreRecentOut } = collectRecentTextBodiesForProspect(
+        mappedMsgRows,
+        String(draft.prospectId)
       );
       const restoreRemind = remindByTierRef.current[refreshedTier];
       const restoreNow = new Date();
@@ -552,6 +556,9 @@ export default function HomePage() {
               latestDirection: restoreLatestDir,
               lastInboundPreview: restoreLastInBody,
               trailSignals: restoreTrail,
+              vibeNotes: (prospectRow.vibe_notes as string) ?? undefined,
+              recentInboundTextBodies: restoreRecentIn,
+              recentOutboundTextBodies: restoreRecentOut,
             })
           : 0;
       const restoreMomentumCtx: MomentumContext | undefined =

@@ -29,6 +29,7 @@ type ProspectRow = {
   id: string;
   name?: string | null;
   tier?: unknown;
+  vibe_notes?: string | null;
 };
 
 type AllocationRow = {
@@ -91,7 +92,7 @@ export default function PulsePage() {
 
     const now = new Date();
     const [prospectsRes, messagesRes, rulesRes, countRes, msgsTsRes] = await Promise.all([
-      client.from("prospects").select("id,name,tier"),
+      client.from("prospects").select("id,name,tier,vibe_notes"),
       client
         .from("messages")
         .select("created_at,body,direction,prospect_id,event_type")
@@ -611,10 +612,10 @@ export default function PulsePage() {
             <p className="text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Truth mirror · equity</p>
             <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Social equity</h2>
             <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
-              Per person: <strong className="text-emerald-400/85">green</strong> = their logged lines,{" "}
-              <strong className="text-amber-400/85">amber</strong> = yours. Toggle{" "}
+              <strong className="text-amber-400/85">Orange</strong> = your lines, <strong className="text-emerald-400/85">green</strong>{" "}
+              = theirs. The name is them; the tag is <strong className="text-[var(--rm-text)]">you</strong> in what you logged. Toggle{" "}
               <strong className="text-[var(--rm-text)]">Last 7 days</strong> vs{" "}
-              <strong className="text-[var(--rm-text)]">All logged</strong> to see trend vs habit.
+              <strong className="text-[var(--rm-text)]">All logged</strong> for trend vs habit.
             </p>
             <SocialEquityPanel rows={socialEquityRows} rows7d={socialEquityRows7d} />
           </section>

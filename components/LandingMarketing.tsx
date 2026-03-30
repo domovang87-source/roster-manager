@@ -135,16 +135,16 @@ export default function LandingMarketing() {
                 <strong className="font-medium text-[var(--rm-text)]">thread balance</strong> (what you logged). Sample data
                 only.
               </p>
-              <div className="mt-4 grid gap-6 sm:grid-cols-2 sm:items-start sm:gap-5">
-                <div className="min-w-0 rounded-sm border border-[color:var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/40 p-3">
+              <div className="mt-4 grid gap-8 sm:grid-cols-2 sm:items-start sm:gap-6">
+                <div className="min-w-0">
                   <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Roster by tier</p>
                   <div className="mt-3 flex justify-center sm:justify-start">
                     <RosterTierPie tierCounts={{ ...DEMO_TIER_COUNTS }} />
                   </div>
                 </div>
-                <div className="min-w-0 rounded-sm border border-[color:var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/40 p-3">
+                <div className="min-w-0">
                   <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Social equity</p>
-                  <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Highest-volume threads · them vs you</p>
+                  <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Highest-volume threads · green = them, orange = you</p>
                   <SocialEquityPanel rows={DEMO_SOCIAL_EQUITY} />
                 </div>
               </div>

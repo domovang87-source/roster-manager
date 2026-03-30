@@ -104,6 +104,41 @@ export function computeThreadTrailSignals(rows: MessageRowLike[]): ThreadTrailSi
   return { inboundReactionCount, outboundRunSinceTheirText, tapbacksDuringYourStreak };
 }
 
+const RECENT_TEXT_BODY_LIMIT = 5;
+
+/** Newest-first substantive text bubbles per prospect — for charisma context heuristics. */
+export function collectRecentTextBodiesForProspect(
+  rows: MessageRowLike[],
+  prospectId: string,
+  limit = RECENT_TEXT_BODY_LIMIT
+): { inbound: string[]; outbound: string[] } {
+  const mine = rows.filter((r) => String(r.prospect_id) === prospectId);
+  const inboundSorted = mine
+    .filter((r) => String(r.direction ?? "").toLowerCase() === "inbound")
+    .sort((a, b) => isoMs(b.created_at) - isoMs(a.created_at));
+  const outboundSorted = mine
+    .filter((r) => String(r.direction ?? "").toLowerCase() === "outbound")
+    .sort((a, b) => isoMs(b.created_at) - isoMs(a.created_at));
+  const inbound: string[] = [];
+  for (const row of inboundSorted) {
+    const bodyStr = String(row.body ?? "");
+    if (isReactionMessageBody(bodyStr)) continue;
+    if (bodyStr.trim().length < 2) continue;
+    inbound.push(bodyStr);
+    if (inbound.length >= limit) break;
+  }
+  const outbound: string[] = [];
+  for (const row of outboundSorted) {
+    if (row.event_type === "note") continue;
+    const bodyStr = String(row.body ?? "");
+    if (isReactionMessageBody(bodyStr)) continue;
+    if (bodyStr.trim().length < 2) continue;
+    outbound.push(bodyStr);
+    if (outbound.length >= limit) break;
+  }
+  return { inbound, outbound };
+}
+
 export type MomentumComputeOpts = {
   lastOutboundAt?: string;
   remindAfterDays: number;
@@ -112,9 +147,15 @@ export type MomentumComputeOpts = {
   lastInboundPreview?: string;
   /** Text-react count + outbound streak since their last real line — feeds score + copy. */
   trailSignals?: ThreadTrailSignals;
+  /** Prospect People notes — relaxes imbalance / open-loop penalties when you said friend, work, etc. */
+  vibeNotes?: string;
+  /** Newest-first logged inbound text bodies (non-reacts) for repair/affection heuristics. */
+  recentInboundTextBodies?: string[];
+  /** Newest-first logged outbound text bodies for conflict heuristics. */
+  recentOutboundTextBodies?: string[];
 };
 
-/** 0–100: start at “you’re fine,” subtract only for overdue cadence, thin threads, or a cryptic last line from them. */
+/** 0–100: neutral baseline 80; penalties/bonuses in `computeThreadMomentum100` (incl. “you texted last” open-loop). */
 export function computeThreadMomentum(a: ThreadAgg, tier: Tier, opts: MomentumComputeOpts): number {
   if (a.total === 0) return 0;
   return computeThreadMomentum100(
@@ -130,7 +171,12 @@ export function computeThreadMomentum(a: ThreadAgg, tier: Tier, opts: MomentumCo
     opts.now,
     opts.latestDirection,
     opts.lastInboundPreview,
-    opts.trailSignals
+    opts.trailSignals,
+    {
+      vibeNotes: opts.vibeNotes,
+      recentInboundTextBodies: opts.recentInboundTextBodies,
+      recentOutboundTextBodies: opts.recentOutboundTextBodies,
+    }
   );
 }
 
@@ -303,6 +349,11 @@ export function buildProspectMomentumStateMap(
     }
     const trailRows = rowsByProspect.get(pid) ?? [];
     const trailSignals = computeThreadTrailSignals(trailRows);
+    const { inbound: recentIn, outbound: recentOut } = collectRecentTextBodiesForProspect(
+      messageRows,
+      pid,
+      RECENT_TEXT_BODY_LIMIT
+    );
     const momentumContext: MomentumContext | undefined = agg
       ? {
           tier,
@@ -336,6 +387,9 @@ export function buildProspectMomentumStateMap(
           latestDirection,
           lastInboundPreview: inbound?.body,
           trailSignals,
+          vibeNotes: row.vibe_notes ?? undefined,
+          recentInboundTextBodies: recentIn,
+          recentOutboundTextBodies: recentOut,
         })
       : 0;
     out.set(pid, {
