@@ -1030,9 +1030,23 @@ export default function HomePage() {
 
   return (
     <div className="space-y-3 sm:space-y-8">
-      {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
-        <div>
+      {/* Header — sign out stays top-left on mobile (not in the wrapping roster/pro cluster). */}
+      <header className="relative">
+        <button
+          type="button"
+          onClick={async () => {
+            const { createBrowserSupabase } = await import("../../../lib/supabase/browser");
+            await createBrowserSupabase().auth.signOut();
+            window.location.href = "/login";
+          }}
+          className="absolute left-0 top-0 z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--rm-border)]/60 bg-[var(--rm-bg-elevated)]/80 text-[var(--rm-text-muted)] shadow-sm backdrop-blur-sm transition hover:border-[var(--rm-border)] hover:text-[var(--rm-text)] active:scale-[0.98] sm:h-9 sm:w-9"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut size={16} strokeWidth={1.35} />
+        </button>
+        <div className="flex flex-wrap items-start justify-between gap-2 pl-12 sm:gap-4 sm:pl-11">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
           <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
             Roster + logged texts → AI drafts. Not a calendar or birthday book.
@@ -1085,20 +1099,7 @@ export default function HomePage() {
               Upgrade
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={async () => {
-              const { createBrowserSupabase } = await import("../../../lib/supabase/browser");
-              await createBrowserSupabase().auth.signOut();
-              window.location.href = "/login";
-            }}
-            className="text-[var(--rm-text-muted)]/40 transition hover:text-[var(--rm-text-muted)]"
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={15} strokeWidth={1.25} />
-          </button>
+        </div>
         </div>
       </header>
 
