@@ -28,8 +28,20 @@ export type ThreadAgg = {
   total: number;
 };
 
+/** Inbound lines that are tapbacks / Screen Time–style imports (not a written reply). */
 export function isReactionMessageBody(body: string): boolean {
-  return body.trim().toLowerCase().startsWith("reacted ");
+  const t = body.trim().toLowerCase();
+  if (t.length === 0) return false;
+  if (t.startsWith("reacted ")) return true;
+  if (t.startsWith("liked ")) return true;
+  if (t.startsWith("loved ")) return true;
+  if (t.startsWith("laughed at ") || t.startsWith("laughed ")) return true;
+  if (t.startsWith("emphasized ")) return true;
+  if (t.startsWith("questioned ")) return true;
+  if (t.startsWith("disliked ")) return true;
+  if (t.startsWith("liked an image") || t.startsWith("loved an image")) return true;
+  if (/^(heart|thumbs up|thumbs down|ha ha|exclamation|question mark)\b/.test(t)) return true;
+  return false;
 }
 
 function isoMs(iso: string): number {

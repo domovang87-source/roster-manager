@@ -3,7 +3,11 @@
  * Scoring lives in thread-momentum-score + roster-portfolio-compute.
  */
 
-import { isVeryShortInboundBody } from "./thread-momentum-score";
+import {
+  isVeryShortInboundBody,
+  tapbackChaseMetrics,
+  type ThreadTrailSignals,
+} from "./thread-momentum-score";
 
 export type MomentumTier = "A" | "B" | "C";
 
@@ -36,6 +40,20 @@ export type MomentumContext = {
   /** Tapbacks in the current outbound streak only (not old-thread noise). */
   tapbacksDuringYourStreak?: number;
 };
+
+function tapbackChaseFromContext(ctx: MomentumContext): boolean {
+  const trail: ThreadTrailSignals = {
+    inboundReactionCount: ctx.inboundReactionCount ?? 0,
+    outboundRunSinceTheirText: ctx.outboundRunSinceTheirText ?? 0,
+    tapbacksDuringYourStreak: ctx.tapbacksDuringYourStreak ?? 0,
+  };
+  return tapbackChaseMetrics(
+    trail,
+    ctx.latestDirection,
+    ctx.inboundText ?? 0,
+    ctx.outboundText ?? 0
+  ).chase;
+}
 
 function shortAgo(iso: string, now: Date): string {
   const diffMs = now.getTime() - new Date(iso).getTime();
@@ -96,7 +114,7 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     const r = ctx.inboundReactionCount ?? 0;
     const tb = ctx.tapbacksDuringYourStreak ?? 0;
     const youVerb = ctx.cadenceFromNote ? "You logged last" : "You texted last";
-    if (tb >= 1 && run >= 2) {
+    if (tapbackChaseFromContext(ctx)) {
       return `You’re carrying it · tapbacks only · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (ibt === 0 && r >= 1 && (ctx.outboundText ?? 0) >= 2) {
@@ -165,7 +183,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
   if (youLast && ctx.lastOutboundAt) {
     const run = ctx.outboundRunSinceTheirText ?? 0;
     const rCount = ctx.inboundReactionCount ?? 0;
-    const tb = ctx.tapbacksDuringYourStreak ?? 0;
+    const chaseCtx = tapbackChaseFromContext(ctx);
     const ibt = ctx.inboundText ?? 0;
     const ob = ctx.outboundText ?? 0;
     const topic = lastOutboundTopicSnippet(ctx.lastOutboundPreview);
@@ -181,7 +199,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       lines.push(`Latest note in the log: “${clip}” — momentum uses this the same way as thread lines when it’s about what actually happened.`);
     }
 
-    if (tb >= 1 && run >= 2) {
+    if (chaseCtx) {
       lines.push(
         `They’ve answered this stretch with tapbacks, not sentences — you’re carrying the thread. The score treats that as weak reciprocity even when it feels like a “bid.”`
       );
@@ -199,13 +217,13 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       );
     }
 
-    if (!(tb >= 1 && run >= 2) && ibt === 0 && rCount >= 1 && ob >= 2) {
+    if (!chaseCtx && ibt === 0 && rCount >= 1 && ob >= 2) {
       lines.push(
         rCount === 1
           ? "They only liked a message — no written reply yet."
           : `They reacted ${rCount} times without a real text back yet — sweet enough, but it’s light engagement.`
       );
-    } else if (!(tb >= 1 && run >= 2) && rCount >= 1 && run >= 3 && ibt > 0) {
+    } else if (!chaseCtx && rCount >= 1 && run >= 3 && ibt > 0) {
       lines.push(
         "Lately the thread’s mostly your words; they’ve leaned on reactions more than new sentences — momentum reflects that, not whether you’re “doing too much.”"
       );

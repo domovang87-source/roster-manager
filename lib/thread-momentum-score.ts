@@ -11,6 +11,38 @@ export type ThreadTrailSignals = {
 };
 
 /**
+ * Raw tapbacks in streak, or inferred when reactions exist + you’re clearly carrying (parse misses, or thin inbound log).
+ */
+export function tapbackChaseMetrics(
+  trail: ThreadTrailSignals | undefined,
+  latestDirection: "inbound" | "outbound" | undefined,
+  inboundTextLines: number,
+  outboundTextLines: number
+): { tbEff: number; run: number; rCount: number; chase: boolean } {
+  if (latestDirection !== "outbound" || !trail) {
+    return { tbEff: 0, run: 0, rCount: 0, chase: false };
+  }
+  const run = trail.outboundRunSinceTheirText;
+  const rCount = trail.inboundReactionCount;
+  const tbRaw = trail.tapbacksDuringYourStreak ?? 0;
+  let tbEff = tbRaw;
+  if (tbEff < 1 && rCount >= 1 && run >= 2 && inboundTextLines === 0 && outboundTextLines >= 2) {
+    tbEff = 1;
+  }
+  if (
+    tbEff < 1 &&
+    rCount >= 1 &&
+    run >= 3 &&
+    outboundTextLines >= 3 &&
+    outboundTextLines >= inboundTextLines + 2
+  ) {
+    tbEff = 1;
+  }
+  const chase = run >= 2 && tbEff >= 1;
+  return { tbEff, run, rCount, chase };
+}
+
+/**
  * One-sided stretches. When they only tapback while you send real lines, penalties are heavier (not capped at 18).
  */
 function pursuitFrictionPenalty(
@@ -20,14 +52,17 @@ function pursuitFrictionPenalty(
   trail: ThreadTrailSignals | undefined
 ): number {
   if (latestDirection !== "outbound" || !trail) return 0;
-  const run = trail.outboundRunSinceTheirText;
-  const rCount = trail.inboundReactionCount;
-  const tb = trail.tapbacksDuringYourStreak ?? 0;
+  const { tbEff, run, rCount } = tapbackChaseMetrics(
+    trail,
+    latestDirection,
+    inboundTextLines,
+    outboundTextLines
+  );
 
-  if (tb >= 1 && run >= 2) {
-    let p = 16 + (run - 2) * 9 + Math.min(12, tb * 4);
-    if (inboundTextLines === 0) p += 12;
-    return Math.min(44, p);
+  if (tbEff >= 1 && run >= 2) {
+    let p = 22 + (run - 2) * 11 + Math.min(16, tbEff * 5);
+    if (inboundTextLines === 0) p += 14;
+    return Math.min(56, p);
   }
 
   let p = 0;
@@ -109,7 +144,14 @@ export function computeThreadMomentum100(
     score -= 6;
   }
 
-  score = Math.min(100, score + Math.min(8, noteCount * 2 + touchBaseCount * 3));
+  const { chase, tbEff, run } = tapbackChaseMetrics(
+    trailSignals,
+    latestDirection,
+    inboundText,
+    outboundText
+  );
+  const bonusRaw = Math.min(8, noteCount * 2 + touchBaseCount * 3);
+  score = Math.min(100, score + (chase ? 0 : bonusRaw));
 
   if (latestDirection === "inbound" && isVeryShortInboundBody(lastInboundPreview)) {
     score -= 20;
@@ -117,13 +159,10 @@ export function computeThreadMomentum100(
 
   score -= pursuitFrictionPenalty(latestDirection, inboundText, outboundText, trailSignals);
 
-  const tb = trailSignals?.tapbacksDuringYourStreak ?? 0;
-  const run = trailSignals?.outboundRunSinceTheirText ?? 0;
-  if (latestDirection === "outbound" && tb >= 1 && run >= 2) {
-    score = Math.min(score, 80);
-  }
-  if (latestDirection === "outbound" && tb >= 1 && run >= 4) {
-    score = Math.min(score, 72);
+  if (chase) {
+    let cap = run >= 4 ? 62 : run >= 3 ? 70 : 76;
+    if (inboundText === 0) cap = Math.min(cap, 64);
+    score = Math.min(score, cap);
   }
 
   return Math.min(100, Math.max(0, Math.round(score)));
