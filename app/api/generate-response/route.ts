@@ -8,6 +8,8 @@ import {
   countScheduledDraftsForUserProspects,
 } from "@/lib/prospect-count-server";
 import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
+import { buildPlaybookRagBlock } from "@/lib/playbook-rag";
+import { STACK_DRAFT_KERNEL } from "@/lib/stack-draft-kernel";
 
 type Tier = "A" | "B" | "C";
 
@@ -190,16 +192,20 @@ export async function POST(req: Request) {
     .from("tier_rules")
     .select("voice_profile")
     .eq("tier", tier)
-    .single();
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  if (ruleError && ruleError.code !== "PGRST116") {
+  if (ruleError) {
     return NextResponse.json(
       { error: "Failed to load tier rules." },
       { status: 500 }
     );
   }
 
-  const voiceProfile = ruleData?.voice_profile ?? "Confident, concise, classy.";
+  const voiceProfile =
+    typeof ruleData?.voice_profile === "string" && ruleData.voice_profile.trim()
+      ? ruleData.voice_profile.trim()
+      : "Confident, concise, classy.";
   const toneKey =
     paidAccess.elite && typeof toneStyle === "string" ? toneStyle.trim().toLowerCase() : "";
   const toneExtra =
@@ -217,14 +223,31 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
-  const systemPrompt =
-    "You are a texting assistant helping the user keep their dating roster warm. " +
-    `Voice style: ${voiceProfile}.${toneExtra} ` +
-    "Draft a short, natural text message the user can send. " +
-    "Use the prospect's notes and activity history to personalize it. " +
-    "If there's been no contact in a while, craft a casual re-engagement text. " +
-    "When the user already sent the last message, prefer a light ping or new thread hook only if appropriate; avoid sounding like you're answering a message they never sent. " +
-    "Keep it concise and natural — match the energy of the conversation. No quotation marks around the message.";
+  const ragQuery = [
+    incomingText && !youTextedLast ? `Their last message: ${incomingText}` : "",
+    youTextedLast ? "Thread: user texted last; optional follow-up or check-in only if appropriate." : "",
+    vibeNotes ? `Context notes: ${vibeNotes}` : "",
+    activityLog ? `Recent activity:\n${activityLog.slice(-2500)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 6000);
+
+  const playbookBlock = await buildPlaybookRagBlock(openai, supabase, ragQuery);
+
+  const systemPrompt = [
+    STACK_DRAFT_KERNEL,
+    playbookBlock ? `\n${playbookBlock}` : "",
+    "\nYou are a texting assistant for the user's dating roster. ",
+    `Voice style: ${voiceProfile}.${toneExtra} `,
+    "Draft one short, natural message they can send. ",
+    "Use notes and activity history. ",
+    "If there's been no contact in a while, a casual re-engagement is fine. ",
+    "When the user already sent the last message, only a light ping or new hook if the log supports it. ",
+    "OUTPUT RULES: Return exactly one SMS-style message (one line or one short paragraph). ",
+    "No headings, no numbered lists, no 'Diagnosis' / 'Move' / multi-section coaching. ",
+    "Do not wrap the entire message in quotation marks.",
+  ].join("");
 
   const userPrompt = `${contextBlock}\n\nDraft a text to send to ${name}.`;
 

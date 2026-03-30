@@ -20,14 +20,14 @@ export function formatRosterAuditDigestLines(audit: PortfolioAuditCopy): string[
   const lines: string[] = [];
   if (audit.weekOverWeekPct === null) {
     lines.push(
-      "Baseline week — next Sunday we'll compare your portfolio momentum to this snapshot."
+      "Baseline week — next Sunday we'll compare your roster Active Charisma Score to this snapshot."
     );
   } else if (audit.weekOverWeekPct > 0) {
-    lines.push(`You gained ${audit.weekOverWeekPct}% Momentum this week.`);
+    lines.push(`You gained ${audit.weekOverWeekPct}% on your Active Charisma Score this week.`);
   } else if (audit.weekOverWeekPct < 0) {
-    lines.push(`You slipped ${Math.abs(audit.weekOverWeekPct)}% Momentum this week.`);
+    lines.push(`You slipped ${Math.abs(audit.weekOverWeekPct)}% on your Active Charisma Score this week.`);
   } else {
-    lines.push("Momentum held steady this week.");
+    lines.push("Your Active Charisma Score held steady this week.");
   }
 
   if (audit.aTierAtRisk > 0) {
@@ -62,18 +62,18 @@ export function formatRosterAuditDigest(
   const plainText = ["WEEKLY ROSTER AUDIT", "", ...lines, "", homeUrl].join("\n");
 
   const previewText = lines.slice(0, 2).join(" ");
-  const subject = `Weekly Roster Audit · social score ${audit.avgMomentum}${
+  const subject = `Weekly Roster Audit · Active Charisma Score ${audit.avgMomentum}${
     weekLabel ? ` · ${weekLabel}` : ""
   }`;
 
   const wowBlock =
     audit.weekOverWeekPct === null
-      ? `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:#a8adbc;">Baseline week — your next audit will include week-over-week momentum.</p>`
+      ? `<p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:#a8adbc;">Baseline week — your next audit will include week-over-week Active Charisma Score change.</p>`
       : audit.weekOverWeekPct > 0
-        ? `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;font-weight:500;">You gained <span style="color:#e8c547;font-weight:600;">${audit.weekOverWeekPct}%</span> Momentum this week.</p>`
+        ? `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;font-weight:500;">You gained <span style="color:#e8c547;font-weight:600;">${audit.weekOverWeekPct}%</span> on your Active Charisma Score this week.</p>`
         : audit.weekOverWeekPct < 0
-          ? `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;font-weight:500;">You slipped <span style="color:#e07a7a;font-weight:600;">${Math.abs(audit.weekOverWeekPct)}%</span> Momentum this week.</p>`
-          : `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;">Momentum held steady this week.</p>`;
+          ? `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;font-weight:500;">You slipped <span style="color:#e07a7a;font-weight:600;">${Math.abs(audit.weekOverWeekPct)}%</span> on your Active Charisma Score this week.</p>`
+          : `<p style="margin:0 0 16px 0;font-size:17px;line-height:1.5;color:#f0e6d8;">Your Active Charisma Score held steady this week.</p>`;
 
   const riskColor = audit.aTierAtRisk > 0 ? "#e8a849" : "#6b7280";
   const riskText =
@@ -84,7 +84,7 @@ export function formatRosterAuditDigest(
   const trendText =
     audit.bTierTrending > 0
       ? `${audit.bTierTrending} B-Tier${audit.bTierTrending === 1 ? "" : "s"} trending up`
-      : "No B-Tier momentum surges flagged";
+      : "No B-Tier Active Charisma surges flagged";
 
   const html = `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -108,7 +108,7 @@ export function formatRosterAuditDigest(
           </tr>
           <tr>
             <td style="background:linear-gradient(145deg,#12131c 0%,#0a0b10 100%);border:1px solid #252836;border-radius:16px;padding:28px 24px 24px;box-shadow:0 24px 48px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.04);">
-              <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:0.35em;text-transform:uppercase;color:#7a8194;">Social score · roster</p>
+              <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:0.35em;text-transform:uppercase;color:#7a8194;">Active Charisma · roster</p>
               <p style="margin:0 0 4px 0;font-size:42px;font-weight:700;letter-spacing:-0.03em;color:#faf7f2;line-height:1;">${audit.avgMomentum}<span style="font-size:16px;font-weight:500;color:#8b92a8;margin-left:6px;vertical-align:middle;">out of 100</span></p>
               <p style="margin:0 0 24px 0;font-size:12px;color:#6d7384;letter-spacing:0.06em;">${audit.prospectCount} lead${audit.prospectCount === 1 ? "" : "s"} on file</p>
               ${wowBlock}

@@ -10,7 +10,7 @@ const navItems = [
   { href: "/inbox", label: "Texts", Icon: ClipboardList },
   { href: "/roster", label: "People", Icon: Kanban },
   { href: "/metrics", label: "Pulse", Icon: Activity },
-  { href: "/logic-lab", label: "Style", Icon: Settings },
+  { href: "/logic-lab", label: "Rhythm", Icon: Settings },
 ];
 
 export default function BottomNav() {

@@ -111,21 +111,44 @@ export default function LogicLabPage() {
     setSaving((prev) => ({ ...prev, [tier]: true }));
     setError(null);
 
+    const { data: authData } = await client.auth.getUser();
+    const uid = authData.user?.id ?? userId;
+    if (!uid) {
+      setError("Sign in to save. If you are signed in, refresh the page and try again.");
+      setSaving((prev) => ({ ...prev, [tier]: false }));
+      return;
+    }
+
     const rule = rules[tier];
-    const { error: saveError } = await client
+    const payload = {
+      tier,
+      user_id: uid,
+      voice_profile: rule.voice_profile.trim() || null,
+      remind_after_days: rule.remind_after_days,
+    };
+
+    const { data: updatedRows, error: updateError } = await client
       .from("tier_rules")
-      .upsert(
-        {
-          tier,
-          voice_profile: rule.voice_profile || null,
-          remind_after_days: rule.remind_after_days,
-          ...(userId ? { user_id: userId } : {}),
-        },
-        { onConflict: userId ? "user_id,tier" : "tier" }
-      );
+      .update(payload)
+      .eq("tier", tier)
+      .eq("user_id", uid)
+      .select("tier");
+
+    if (updateError) {
+      setError(`${tierLabels[tier]}: ${updateError.message}`);
+      setSaving((prev) => ({ ...prev, [tier]: false }));
+      return;
+    }
+
+    const saveError =
+      updatedRows && updatedRows.length > 0
+        ? null
+        : (await client.from("tier_rules").insert(payload)).error;
 
     if (saveError) {
-      setError(`Failed to save ${tierLabels[tier]} rules.`);
+      setError(
+        `Failed to save ${tierLabels[tier]}: ${saveError.message}. If this mentions a policy or constraint, run the latest Supabase migrations for tier_rules (user_id + RLS).`
+      );
     } else {
       setSaved((prev) => ({ ...prev, [tier]: true }));
       setTimeout(() => setSaved((prev) => ({ ...prev, [tier]: false })), 2000);
@@ -138,11 +161,12 @@ export default function LogicLabPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-          Style
+          Rhythm
         </p>
-        <h1 className="text-3xl font-semibold tracking-wide">How the AI talks</h1>
+        <h1 className="text-3xl font-semibold tracking-wide">Voice &amp; check-in rhythm</h1>
         <p className="text-sm text-[var(--rm-text-muted)]">
-          Per person-type (A / B / C): tone of drafts and how often you want a nudge to check in.
+          Per tier (A / B / C): <strong className="text-[var(--rm-text)]">drafts on Home</strong> use the voice you save
+          here, plus any Elite tone you pick. Check-in frequency below shapes Pulse and thread timing — not the wording.
         </p>
       </header>
 
@@ -240,7 +264,7 @@ export default function LogicLabPage() {
       <PaywallModal
         isOpen={showPaywall}
         onClose={() => setShowPaywall(false)}
-        feature="Style"
+        feature="Rhythm"
       />
     </div>
   );

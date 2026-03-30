@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { MessageSquare, Heart, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import {
@@ -107,6 +108,24 @@ function batchLineBubbleClass(entry: LogEntry): string {
     return "border-slate-500/30 bg-slate-500/[0.08]";
   }
   return "border-sky-500/25 bg-sky-950/40";
+}
+
+/** Deep-link from Home stack cards: /inbox?prospect=<uuid> */
+function SyncInboxProspectParam({
+  prospects,
+  setFilterProspectId,
+}: {
+  prospects: Prospect[];
+  setFilterProspectId: React.Dispatch<React.SetStateAction<string>>;
+}) {
+  const searchParams = useSearchParams();
+  const prospectParam = searchParams.get("prospect");
+  React.useEffect(() => {
+    if (!prospectParam || prospects.length === 0) return;
+    if (!prospects.some((p) => p.id === prospectParam)) return;
+    setFilterProspectId(prospectParam);
+  }, [prospectParam, prospects, setFilterProspectId]);
+  return null;
 }
 
 export default function ActivityLogPage() {
@@ -318,7 +337,7 @@ export default function ActivityLogPage() {
       } else { setLogError(insertError.message); setIsSending(false); return; }
     }
     const who = prospects.find((p) => p.id === selectedProspectId)?.name ?? "them";
-    setImportToast(`Logged · ${who}'s momentum updated`);
+    setImportToast(`Logged · ${who}'s Active Charisma Score updated`);
     window.setTimeout(() => setImportToast(null), 5000);
     setLogBody("");
     setLogWhen(toLocalDatetimeInputValue(new Date()));
@@ -478,7 +497,7 @@ export default function ActivityLogPage() {
 
     const who = prospects.find((p) => p.id === screenshotProspectId)?.name ?? "them";
     setImportToast(
-      `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s momentum updated`
+      `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s Active Charisma Score updated`
     );
     window.setTimeout(() => setImportToast(null), 5000);
 
@@ -640,6 +659,9 @@ export default function ActivityLogPage() {
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <SyncInboxProspectParam prospects={prospects} setFilterProspectId={setFilterProspectId} />
+      </Suspense>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-wide">Your texts</h1>
@@ -1098,8 +1120,8 @@ export default function ActivityLogPage() {
 
                   <p className="text-[10px] text-[var(--rm-text-muted)]">
                     {parsedMessages.length} message{parsedMessages.length === 1 ? "" : "s"} · tap{" "}
-                    <span className="text-sky-300/90">Flip</span> if a bubble is on the wrong side (fixes Home
-                    momentum).
+                    <span className="text-sky-300/90">Flip</span> if a bubble is on the wrong side (fixes Home Active
+                    Charisma).
                   </p>
                   <div className="max-h-52 space-y-1.5 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
                     {parsedMessages.map((msg, i) => (

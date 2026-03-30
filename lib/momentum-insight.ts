@@ -165,7 +165,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     return [
       `${score}/100 — ${first} ended on a very small line (a beat, not a chapter).`,
       overdue
-        ? `You’re past the ~${goal}-day rhythm you set on Style — when you want back in, a real text fixes that.`
+        ? `You’re past the ~${goal}-day target you set in Rhythm — when you want back in, a real text fixes that.`
         : `You’re not failing the pace you chose; the only real question is whether you want a soft closing note or to let it breathe.`,
     ];
   }
@@ -174,7 +174,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     return [
       `${score}/100 — they texted last ${shortAgo(ctx.latestAt, now)}.`,
       overdue
-        ? `You’re past the ~${goal}-day check-in you set on Style — reply when you mean it.`
+        ? `You’re past the ~${goal}-day check-in you set in Rhythm — reply when you mean it.`
         : `No clock drama yet — answer when you actually want to.`,
     ];
   }
@@ -190,7 +190,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     const cadenceNote = ctx.cadenceFromNote === true;
     const lines: string[] = [
       cadenceNote
-        ? `${score}/100 — your last log reads like real-life context (${shortAgo(ctx.lastOutboundAt, now)}), which matters for the check-in pace you set under Style.`
+        ? `${score}/100 — your last log reads like real-life context (${shortAgo(ctx.lastOutboundAt, now)}), which matters for the check-in pace from Rhythm.`
         : `${score}/100 — you texted last ${shortAgo(ctx.lastOutboundAt, now)}.`,
     ];
     if (noteHint && ctx.noteCount && ctx.noteCount > 0) {
@@ -202,18 +202,23 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       lines.push(
         `They’ve been answering with text reacts, not real messages — you’re doing most of the work. The number comes out lower because reciprocity looks thin.`
       );
+      lines.push(
+        `Next step: pause until they type something real, or send one short line that needs an actual reply — then let it sit instead of stacking more.`
+      );
     } else if (run === 2) {
       lines.push(
         topic != null
           ? `Since their last real line, you’ve sent 2 on your side; your last touches ${topic}. They haven’t written back yet — that’s what pulls this down, not that you texted twice.`
           : `Since their last real line, you’ve sent 2 with no written answer yet — that silence is what pulls this down, not “texting too much.”`
       );
+      lines.push(`Next step: wait a bit, or change the angle with one new message — then stop until they answer in writing.`);
     } else if (run >= 3) {
       lines.push(
         topic != null
           ? `You’ve sent ${run} since their last real line; your last touches ${topic}. Still no written answer — that one-sided stretch is why this reads lower.`
           : `You’ve sent ${run} since their last real line with no written answer — one-sided stretches read lower here.`
       );
+      lines.push(`Next step: pull back and let them close the gap, unless one final clear ping is truly worth it — then log what you sent.`);
     }
 
     if (!chaseCtx && ibt === 0 && rCount >= 1 && ob >= 2) {
@@ -242,15 +247,15 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       `${score}/100 — your thread is mostly in notes right now.`,
       `Latest: “${clip}”`,
       overdue
-        ? `You’re past the ~${goal}-day window you set under Style — a newer log line may reset how that reads.`
-        : `If you just logged a call, date, or meetup, timing vs Style should look kinder.`,
+        ? `You’re past the ~${goal}-day window you set in Rhythm — a newer log line may reset how that reads.`
+        : `If you just logged a call, date, or meetup, Rhythm timing should read kinder.`,
     ];
   }
 
   return [
     `${score}/100 — enough in the log to read the thread.`,
     overdue
-      ? `You’re past the ~${goal}-day window you picked on Style.`
+      ? `You’re past the ~${goal}-day window you picked in Rhythm.`
       : `If this feels off, a bubble might be on the wrong side in Texts.`,
   ];
 }

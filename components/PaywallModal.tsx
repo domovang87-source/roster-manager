@@ -126,7 +126,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
               onClick={() => setPlan("monthly")}
               className={`rounded-full px-3 py-1 transition ${
                 plan === "monthly"
-                  ? "bg-emerald-500/20 text-emerald-400"
+                  ? "bg-emerald-500/25 font-medium text-emerald-300 ring-1 ring-emerald-500/35"
                   : "text-[var(--rm-text-muted)] hover:text-[var(--rm-text)]"
               }`}
             >
@@ -138,7 +138,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
               className={`rounded-full px-3 py-1 transition ${
                 plan === "yearly"
                   ? "bg-[var(--rm-text)]/10 text-[var(--rm-text)]"
-                  : "text-[var(--rm-text-muted)] hover:text-[var(--rm-text)]"
+                  : "text-[var(--rm-text-muted)]/80 hover:text-[var(--rm-text-muted)]"
               }`}
             >
               Yearly
@@ -146,8 +146,13 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           </div>
         </div>
 
-        {plan === "yearly" && (
-          <p className="mt-2 text-[10px] text-emerald-400/80 tracking-[0.1em] uppercase">
+        {plan === "monthly" ? (
+          <p className="mt-2 text-[11px] leading-snug text-[var(--rm-text-muted)]">
+            <span className="text-[var(--rm-text)]">Monthly is the default</span> (Pro $29/mo, Elite $99/mo). Switch to
+            yearly if you want the lower effective rate.
+          </p>
+        ) : (
+          <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-emerald-400/80">
             ✦ save vs monthly on annual
           </p>
         )}

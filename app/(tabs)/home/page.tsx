@@ -989,7 +989,7 @@ export default function HomePage() {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: "yearly" }),
+        body: JSON.stringify({ plan: "monthly", tier: "pro" }),
       });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || data.error) {
@@ -1246,14 +1246,30 @@ export default function HomePage() {
                     return (
                       <div
                         key={prospect.id}
-                        className={`relative border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-300 ease-out sm:p-5 ${
+                        role="presentation"
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest("[data-stack-card-stop]")) return;
+                          router.push(`/inbox?prospect=${encodeURIComponent(prospect.id)}`);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          if ((e.target as HTMLElement).closest("[data-stack-card-stop]")) return;
+                          e.preventDefault();
+                          router.push(`/inbox?prospect=${encodeURIComponent(prospect.id)}`);
+                        }}
+                        title="Open Texts & notes for this person"
+                        className={`relative cursor-pointer border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 transition-opacity duration-300 ease-out sm:p-5 ${
                           dismissingDraftIds[dismissKey] ? "pointer-events-none opacity-0" : "opacity-100"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                             <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
-                            <div className="relative shrink-0" data-momentum-root={prospect.id}>
+                            <div
+                              className="relative shrink-0"
+                              data-momentum-root={prospect.id}
+                              data-stack-card-stop
+                            >
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1266,7 +1282,7 @@ export default function HomePage() {
                                 }`}
                                 aria-expanded={momentumPopoverId === prospect.id}
                                 aria-haspopup="dialog"
-                                title="Momentum (0–100): how well you’re keeping up on this chat"
+                                title="Active Charisma Score (0–100): how well you’re keeping up on this chat"
                               >
                                 <Wand2 size={12} strokeWidth={1.5} className="shrink-0 text-amber-400/90" aria-hidden />
                                 <span className="flex min-w-0 flex-col gap-0.5">
@@ -1286,11 +1302,11 @@ export default function HomePage() {
                                 <div
                                   data-momentum-popover
                                   role="dialog"
-                                  aria-label={`Momentum for ${prospect.name}`}
+                                  aria-label={`Active Charisma Score for ${prospect.name}`}
                                   className="fixed z-[80] max-h-[min(70vh,calc(100dvh-2rem))] overflow-y-auto border border-amber-500/30 bg-[var(--rm-bg-elevated)] p-3 text-left opacity-0 shadow-xl transition-opacity duration-75"
                                 >
                                   <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-400/95">
-                                    Momentum · {prospect.momentum ?? 0}/100 · {tierPlain[prospect.tier]}
+                                    Active Charisma · {prospect.momentum ?? 0}/100 · {tierPlain[prospect.tier]}
                                   </p>
                                   <div className="mt-2 space-y-2.5 text-[11px] leading-snug text-[var(--rm-text-muted)] normal-case tracking-normal">
                                     {momentumPopoverLines(
@@ -1305,7 +1321,7 @@ export default function HomePage() {
                               ) : null}
                             </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
+                          <div className="flex shrink-0 items-center gap-1.5" data-stack-card-stop>
                             {prospect.lastActivityAt ? (
                               <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
                                 {formatRelativeTime(prospect.lastActivityAt)}
@@ -1332,9 +1348,9 @@ export default function HomePage() {
                         </div>
 
                         {isElite ? (
-                          <div className="mt-2 border-t border-[var(--rm-border)]/50 pt-2">
+                          <div className="mt-2 border-t border-[var(--rm-border)]/50 pt-2" data-stack-card-stop>
                             <p className="mb-1 text-[8px] uppercase tracking-[0.2em] text-slate-500">
-                              Tone style
+                              Draft tone
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {ELITE_TONES.map((t) => {
@@ -1392,7 +1408,7 @@ export default function HomePage() {
                               <p className="min-w-0 flex-1 text-sm leading-relaxed text-[var(--rm-text)]">
                                 <span className="text-[1.05em]">{currentDraft}</span>
                               </p>
-                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                              <div className="flex shrink-0 flex-col items-end gap-1.5" data-stack-card-stop>
                                 <div className="flex max-w-full flex-row flex-wrap justify-end gap-1">
                                   <button
                                     type="button"
@@ -1484,19 +1500,21 @@ export default function HomePage() {
                                   )}
                                 </p>
                                 {prospect.phoneNumber ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      window.location.href = prospect.phoneNumber
-                                        ? `sms:${prospect.phoneNumber}`
-                                        : "sms:";
-                                    }}
-                                    className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
-                                    title="Open Messages"
-                                    aria-label="Open Messages"
-                                  >
-                                    <MessageSquare size={13} strokeWidth={1.25} />
-                                  </button>
+                                  <span className="shrink-0" data-stack-card-stop>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        window.location.href = prospect.phoneNumber
+                                          ? `sms:${prospect.phoneNumber}`
+                                          : "sms:";
+                                      }}
+                                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
+                                      title="Open Messages"
+                                      aria-label="Open Messages"
+                                    >
+                                      <MessageSquare size={13} strokeWidth={1.25} />
+                                    </button>
+                                  </span>
                                 ) : null}
                               </div>
                             ) : null}
@@ -1506,7 +1524,7 @@ export default function HomePage() {
                                 Generating draft
                               </p>
                             ) : null}
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2" data-stack-card-stop>
                               {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
                                 <button
                                   type="button"
