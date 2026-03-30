@@ -100,6 +100,12 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mode = new URLSearchParams(window.location.search).get("mode");
+    if (mode === "signup") setView("sign_up");
+  }, []);
+
+  useEffect(() => {
     if (!supabase) return;
     const {
       data: { subscription },
@@ -394,7 +400,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => switchView("forgot")}
-                    className="text-[11px] tracking-[0.08em] text-[#555a66] transition hover:text-[#a8adb8]"
+                    className="text-[11px] tracking-[0.08em] text-[#7d8494] transition hover:text-[#e8eaef]"
                   >
                     Forgot password?
                   </button>
@@ -439,7 +445,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => switchView("sign_in")}
-              className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
+              className="text-[11px] tracking-[0.1em] text-[#8b929e] transition hover:text-[#fafafa]"
             >
               Back to sign in
             </button>
@@ -447,7 +453,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => switchView(view === "sign_in" ? "sign_up" : "sign_in")}
-              className="text-[11px] tracking-[0.1em] text-[#555a66] transition hover:text-[#a8adb8]"
+              className="text-[12px] font-medium tracking-[0.06em] text-[#b4bac8] transition hover:text-[#fafafa]"
             >
               {view === "sign_in"
                 ? "Create an account"

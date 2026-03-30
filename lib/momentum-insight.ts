@@ -33,6 +33,8 @@ export type MomentumContext = {
   inboundReactionCount?: number;
   /** Outbound texts in a row since their last real written line (tapbacks skipped). */
   outboundRunSinceTheirText?: number;
+  /** Tapbacks in the current outbound streak only (not old-thread noise). */
+  tapbacksDuringYourStreak?: number;
 };
 
 function shortAgo(iso: string, now: Date): string {
@@ -92,7 +94,11 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     const run = ctx.outboundRunSinceTheirText ?? 0;
     const ibt = ctx.inboundText ?? ctx.inbound;
     const r = ctx.inboundReactionCount ?? 0;
+    const tb = ctx.tapbacksDuringYourStreak ?? 0;
     const youVerb = ctx.cadenceFromNote ? "You logged last" : "You texted last";
+    if (tb >= 1 && run >= 2) {
+      return `You’re carrying it · tapbacks only · ${shortAgo(ctx.latestAt, now)}`;
+    }
     if (ibt === 0 && r >= 1 && (ctx.outboundText ?? 0) >= 2) {
       return `They liked, didn’t type · ${shortAgo(ctx.latestAt, now)}`;
     }
@@ -128,7 +134,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
 
   if (!ctx || ctx.total === 0) {
     return [
-      `Log something for ${first} under Texts — then this number is about timing and how the thread landed, not a grade on you.`,
+      `Log something for ${first} under Texts — then this number tracks timing and how the thread reads from what you saved.`,
     ];
   }
 
@@ -144,7 +150,6 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       overdue
         ? `You’re past the ~${goal}-day rhythm you set on Style — when you want back in, a real text fixes that.`
         : `You’re not failing the pace you chose; the only real question is whether you want a soft closing note or to let it breathe.`,
-      `Something sweet is allowed. So is silence. Pick what fits the story you want with ${first}.`,
     ];
   }
 
@@ -153,13 +158,14 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       `${score}/100 — they texted last ${shortAgo(ctx.latestAt, now)}.`,
       overdue
         ? `You’re past the ~${goal}-day check-in you set on Style — reply when you mean it.`
-        : `No clock drama yet. Answer when you want to, not because a number guilted you.`,
+        : `No clock drama yet — answer when you actually want to.`,
     ];
   }
 
   if (youLast && ctx.lastOutboundAt) {
     const run = ctx.outboundRunSinceTheirText ?? 0;
     const rCount = ctx.inboundReactionCount ?? 0;
+    const tb = ctx.tapbacksDuringYourStreak ?? 0;
     const ibt = ctx.inboundText ?? 0;
     const ob = ctx.outboundText ?? 0;
     const topic = lastOutboundTopicSnippet(ctx.lastOutboundPreview);
@@ -175,7 +181,11 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       lines.push(`Latest note in the log: “${clip}” — momentum uses this the same way as thread lines when it’s about what actually happened.`);
     }
 
-    if (run === 2) {
+    if (tb >= 1 && run >= 2) {
+      lines.push(
+        `They’ve answered this stretch with tapbacks, not sentences — you’re carrying the thread. The score treats that as weak reciprocity even when it feels like a “bid.”`
+      );
+    } else if (run === 2) {
       lines.push(
         topic != null
           ? `Since their last real line, you’ve sent 2 messages on your side; your last touches ${topic}. The score dips a little because they haven’t answered yet — not because you sent twice.`
@@ -189,13 +199,13 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       );
     }
 
-    if (ibt === 0 && rCount >= 1 && ob >= 2) {
+    if (!(tb >= 1 && run >= 2) && ibt === 0 && rCount >= 1 && ob >= 2) {
       lines.push(
         rCount === 1
           ? "They only liked a message — no written reply yet."
           : `They reacted ${rCount} times without a real text back yet — sweet enough, but it’s light engagement.`
       );
-    } else if (rCount >= 1 && run >= 3 && ibt > 0) {
+    } else if (!(tb >= 1 && run >= 2) && rCount >= 1 && run >= 3 && ibt > 0) {
       lines.push(
         "Lately the thread’s mostly your words; they’ve leaned on reactions more than new sentences — momentum reflects that, not whether you’re “doing too much.”"
       );
@@ -205,11 +215,6 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
       );
     }
 
-    lines.push(
-      `~${score} = thread energy (pace + how much they’re actually answering). It’s not a verdict on you.`
-    );
-
-    lines.push("Could let it sit, or send another — both can work. Pick what fits your frame.");
     return lines;
   }
 

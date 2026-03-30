@@ -6,7 +6,7 @@ import {
   noteCountsForStyleCadence,
   theirEngagementCreditFromNoteBody,
 } from "./note-engagement-signal";
-import { computeThreadMomentum100 } from "./thread-momentum-score";
+import { computeThreadMomentum100, type ThreadTrailSignals } from "./thread-momentum-score";
 
 export type Tier = "A" | "B" | "C";
 
@@ -36,29 +36,60 @@ function isoMs(iso: string): number {
   return new Date(iso).getTime();
 }
 
-/** Consecutive outbound texts since their last substantive inbound (tapbacks skipped). */
-export function computeThreadTrailSignals(rows: MessageRowLike[]): {
-  inboundReactionCount: number;
-  outboundRunSinceTheirText: number;
-} {
+/** Consecutive outbound texts since their last substantive inbound; tapbacks scoped to your current streak. */
+export function computeThreadTrailSignals(rows: MessageRowLike[]): ThreadTrailSignals {
   let inboundReactionCount = 0;
   for (const row of rows) {
     if (String(row.direction ?? "").toLowerCase() !== "inbound") continue;
     if (isReactionMessageBody(String(row.body ?? ""))) inboundReactionCount += 1;
   }
   const sorted = [...rows].sort((a, b) => isoMs(b.created_at) - isoMs(a.created_at));
-  let outboundRunSinceTheirText = 0;
-  for (const row of sorted) {
+  let i = 0;
+  let leadingInboundReactions = 0;
+  while (i < sorted.length) {
+    const row = sorted[i];
     const isNote = row.event_type === "note";
     const bodyStr = String(row.body ?? "");
     const isReaction = isReactionMessageBody(bodyStr);
     const isInbound = String(row.direction ?? "").toLowerCase() === "inbound";
-    if (isNote) continue;
-    if (isInbound && isReaction) continue;
-    if (isInbound && !isReaction) break;
-    if (!isInbound && !isReaction) outboundRunSinceTheirText += 1;
+    if (isNote) {
+      i += 1;
+      continue;
+    }
+    if (isInbound && isReaction) {
+      leadingInboundReactions += 1;
+      i += 1;
+      continue;
+    }
+    break;
   }
-  return { inboundReactionCount, outboundRunSinceTheirText };
+  let outboundRunSinceTheirText = 0;
+  let sandwichedInboundReactions = 0;
+  while (i < sorted.length) {
+    const row = sorted[i];
+    const isNote = row.event_type === "note";
+    const bodyStr = String(row.body ?? "");
+    const isReaction = isReactionMessageBody(bodyStr);
+    const isInbound = String(row.direction ?? "").toLowerCase() === "inbound";
+    if (isNote) {
+      i += 1;
+      continue;
+    }
+    if (isInbound && isReaction) {
+      if (outboundRunSinceTheirText > 0) sandwichedInboundReactions += 1;
+      i += 1;
+      continue;
+    }
+    if (isInbound && !isReaction) break;
+    if (!isInbound && !isReaction) {
+      outboundRunSinceTheirText += 1;
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  const tapbacksDuringYourStreak = leadingInboundReactions + sandwichedInboundReactions;
+  return { inboundReactionCount, outboundRunSinceTheirText, tapbacksDuringYourStreak };
 }
 
 export type MomentumComputeOpts = {
@@ -68,7 +99,7 @@ export type MomentumComputeOpts = {
   latestDirection?: "inbound" | "outbound";
   lastInboundPreview?: string;
   /** Tapback count + outbound streak since their last real line — feeds score + “Why”. */
-  trailSignals?: { inboundReactionCount: number; outboundRunSinceTheirText: number };
+  trailSignals?: ThreadTrailSignals;
 };
 
 /** 0–100: start at “you’re fine,” subtract only for overdue cadence, thin threads, or a cryptic last line from them. */
@@ -282,6 +313,7 @@ export function buildProspectMomentumStateMap(
           cadenceFromNote: cadence?.fromNote === true,
           inboundReactionCount: trailSignals.inboundReactionCount,
           outboundRunSinceTheirText: trailSignals.outboundRunSinceTheirText,
+          tapbacksDuringYourStreak: trailSignals.tapbacksDuringYourStreak,
         }
       : undefined;
     const momentum = agg

@@ -3,9 +3,16 @@ export type MomentumTierABC = "A" | "B" | "C";
 export type ThreadTrailSignals = {
   inboundReactionCount: number;
   outboundRunSinceTheirText: number;
+  /**
+   * Tapbacks logged in the current “your streak” window (newest-first): leading hearts after your texts,
+   * plus any reactions sandwiched between your outbound lines — excludes ancient reactions from old phases.
+   */
+  tapbacksDuringYourStreak: number;
 };
 
-/** Light touch: note one-sided stretches without punishing double-text culture heavily. */
+/**
+ * One-sided stretches. When they only tapback while you send real lines, penalties are heavier (not capped at 18).
+ */
 function pursuitFrictionPenalty(
   latestDirection: "inbound" | "outbound" | undefined,
   inboundTextLines: number,
@@ -15,6 +22,14 @@ function pursuitFrictionPenalty(
   if (latestDirection !== "outbound" || !trail) return 0;
   const run = trail.outboundRunSinceTheirText;
   const rCount = trail.inboundReactionCount;
+  const tb = trail.tapbacksDuringYourStreak ?? 0;
+
+  if (tb >= 1 && run >= 2) {
+    let p = 16 + (run - 2) * 9 + Math.min(12, tb * 4);
+    if (inboundTextLines === 0) p += 12;
+    return Math.min(44, p);
+  }
+
   let p = 0;
   if (run >= 2) {
     p += Math.min(14, (run - 1) * 3);
@@ -101,6 +116,15 @@ export function computeThreadMomentum100(
   }
 
   score -= pursuitFrictionPenalty(latestDirection, inboundText, outboundText, trailSignals);
+
+  const tb = trailSignals?.tapbacksDuringYourStreak ?? 0;
+  const run = trailSignals?.outboundRunSinceTheirText ?? 0;
+  if (latestDirection === "outbound" && tb >= 1 && run >= 2) {
+    score = Math.min(score, 80);
+  }
+  if (latestDirection === "outbound" && tb >= 1 && run >= 4) {
+    score = Math.min(score, 72);
+  }
 
   return Math.min(100, Math.max(0, Math.round(score)));
 }

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/core";
-import { Clock, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Clock, Loader2, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
 import { FREE_ROSTER_SLOTS, rosterRequiresUpgradeForUi } from "../../../lib/free-tier";
@@ -904,17 +904,22 @@ export default function RosterPage() {
                 type="button"
                 onClick={handleGenerateResponse}
                 disabled={isGenerating}
-                className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                className={`inline-flex items-center justify-center gap-2 border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
                   !isPro
                     ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-100/90 hover:border-emerald-400/60"
                     : "border-[var(--rm-text)] hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
                 }`}
               >
-                {isGenerating
-                  ? "Generating..."
-                  : !isPro
-                    ? "Unlock AI · Pro"
-                    : "Generate Response"}
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={2} aria-hidden />
+                    Generating…
+                  </>
+                ) : !isPro ? (
+                  "Unlock AI · Pro"
+                ) : (
+                  "Generate Response"
+                )}
               </button>
 
               {responseData ? (

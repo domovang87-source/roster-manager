@@ -1,0 +1,213 @@
+"use client";
+
+import Link from "next/link";
+import { Wand2 } from "lucide-react";
+
+/** Single-scroll marketing teaser: same hero as login, Pulse + draft mocks, CTA to sign up. */
+export default function LandingMarketing() {
+  return (
+    <div className="min-h-screen bg-[#0b0e11] text-[#fafafa]">
+      <header className="mx-auto max-w-3xl px-6 pb-16 pt-16 text-center sm:pt-24">
+        <h1 className="text-5xl font-light tracking-[0.5em] sm:text-6xl">STACK</h1>
+        <p className="mt-5 font-light italic tracking-[0.15em] text-[#a8adb8]">
+          Your circle, curated.
+        </p>
+        <p className="mx-auto mt-8 max-w-md text-sm leading-relaxed text-[#8b929e]">
+          Roster who matters, log real threads, see if you&apos;re keeping up — then get charismatic drafts when you&apos;re stuck.
+        </p>
+        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <Link
+            href="/login?mode=signup"
+            className="inline-flex w-full max-w-xs items-center justify-center rounded-full bg-[#fafafa] px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.28em] text-[#0b0e11] transition hover:opacity-90 sm:w-auto"
+          >
+            Start here
+          </Link>
+          <Link
+            href="/login"
+            className="text-[12px] font-medium tracking-[0.08em] text-[#b4bac8] transition hover:text-[#fafafa]"
+          >
+            Already have an account? Sign in
+          </Link>
+        </div>
+      </header>
+
+      <section className="mx-auto max-w-3xl px-6 pb-20" aria-labelledby="pulse-preview-heading">
+        <p
+          id="pulse-preview-heading"
+          className="text-center text-[10px] uppercase tracking-[0.4em] text-[#6b7280]"
+        >
+          Pulse · your snapshot
+        </p>
+        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[#9aa1ae]">
+          One screen for social score, volume, and whether A-list threads are waiting on you.
+        </p>
+        <div className="mt-8 overflow-hidden rounded-sm border border-[#2a2e36] bg-[#12161c] shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+          <div className="border-b border-[#2a2e36] px-4 py-3">
+            <p className="text-[10px] uppercase tracking-[0.32em] text-[#6b7280]">Pulse</p>
+            <p className="mt-1 text-sm font-semibold text-[#e8eaef]">How you&apos;re running it</p>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <div className="border border-amber-500/25 bg-amber-500/[0.06] p-3">
+              <p className="text-[9px] uppercase tracking-[0.28em] text-amber-200/70">Social score · roster</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-amber-200/95">
+                72<span className="ml-1 text-base font-normal text-[#6b7280]">/100</span>
+              </p>
+              <p className="mt-1 text-[10px] text-[#8b929e]">Tap the score for the read</p>
+            </div>
+            <div className="border border-[#2a2e36] bg-[#0b0e11] p-3">
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[#6b7280]">On your roster</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">12</p>
+              <p className="mt-1 text-[10px] text-[#8b929e]">A 3 · B 5 · C 4</p>
+            </div>
+            <div className="border border-[#2a2e36] bg-[#0b0e11] p-3">
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[#6b7280]">Texts logged (7d)</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">38</p>
+            </div>
+            <div className="border border-[#2a2e36] bg-[#0b0e11] p-3">
+              <p className="text-[9px] uppercase tracking-[0.28em] text-[#6b7280]">A-list open loops</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-amber-400/95">1</p>
+              <p className="mt-1 text-[10px] text-[#8b929e]">They texted last · you haven&apos;t replied</p>
+            </div>
+          </div>
+          <div className="border-t border-[#2a2e36] px-4 py-4">
+            <p className="text-[9px] uppercase tracking-[0.28em] text-[#6b7280]">Volume</p>
+            <p className="mt-1 text-xs font-medium text-[#c8cdd6]">Messages logged per week</p>
+            <div className="mt-4 flex h-36 gap-1 sm:h-40 sm:gap-2">
+              {[
+                { pct: 50, label: "Feb 3" },
+                { pct: 74, label: "Feb 10" },
+                { pct: 68, label: "Feb 17" },
+                { pct: 100, label: "Feb 24" },
+                { pct: 79, label: "Mar 3" },
+                { pct: 88, label: "Mar 10" },
+                { pct: 64, label: "Mar 17" },
+                { pct: 97, label: "Mar 24" },
+              ].map(({ pct, label }, i) => (
+                <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div className="flex min-h-0 flex-1 flex-col justify-end rounded-b-sm bg-[#0b0e11]/90">
+                    <div
+                      className="mx-auto w-full max-w-[2.5rem] rounded-t-sm bg-gradient-to-t from-amber-900/60 to-amber-500/55 shadow-[0_-1px_12px_rgba(245,158,11,0.12)]"
+                      style={{ height: `${Math.max(12, pct)}%`, minHeight: "0.75rem" }}
+                    />
+                  </div>
+                  <span className="mt-1.5 block text-center font-mono text-[8px] text-[#6b7280] sm:text-[9px]">
+                    {label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-3xl px-6 pb-20" aria-labelledby="momentum-read-heading">
+        <p
+          id="momentum-read-heading"
+          className="text-center text-[10px] uppercase tracking-[0.4em] text-[#6b7280]"
+        >
+          Home · momentum read
+        </p>
+        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[#9aa1ae]">
+          Tap the score on any card — Stack spells out what the number means for that thread, in plain English.
+        </p>
+        <div className="mt-8 overflow-hidden rounded-sm border border-[#2a2e36] bg-[#0b0e11] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="border-b border-[#2a2e36] bg-[#12161c] px-4 py-2">
+            <p className="text-[9px] uppercase tracking-[0.28em] text-[#6b7280]">Sample screenshot · not your data</p>
+          </div>
+          <div className="p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#2a2e36]/80 pb-3">
+              <div>
+                <p className="text-sm font-semibold text-[#e8eaef]">Aubrey</p>
+                <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[#6b7280]">A-Tier</p>
+              </div>
+              <div className="flex max-w-[10.5rem] items-center gap-1.5 rounded-full border border-amber-500/45 bg-[#12161c] px-2 py-1 text-left ring-1 ring-amber-500/20">
+                <Wand2 size={12} strokeWidth={1.5} className="shrink-0 text-amber-400/90" aria-hidden />
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-[12px] font-semibold tabular-nums leading-none text-amber-100/95">76</span>
+                  <span className="line-clamp-2 text-[8px] font-medium leading-snug text-[#a8adb8]">
+                    They texted last · tap
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div
+              className="mt-3 border border-amber-500/30 bg-[#161b22] p-3 text-left shadow-lg"
+              role="img"
+              aria-label="Example momentum explanation popover"
+            >
+              <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-400/95">
+                Momentum · 76/100 · A-Tier
+              </p>
+              <div className="mt-2 space-y-2.5 text-[11px] leading-snug text-[#a8adb8]">
+                <p className="text-[#c8cdd6]">
+                  <span className="font-medium text-[#e8eaef]">76/100</span> — they texted last about 18 hours ago.
+                </p>
+                <p>
+                  You&apos;re nearing the ~24-hour check-in you set on{" "}
+                  <strong className="font-medium text-[#e8eaef]">Style</strong> — reply when you mean it.
+                </p>
+                <p>
+                  ~76 = She stated she didn&apos;t like how you took so long to respond.{" "}
+                  <span className="text-[#e8eaef]">
+                    This shows she invested in you, it&apos;s good. But you&apos;re at risk of upsetting her.
+                  </span>
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-[10px] text-[#6b7280]">
+              In the app, tap the score on the card — you get this kind of clarity on your real threads.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-3xl px-6 pb-24" aria-labelledby="draft-preview-heading">
+        <p
+          id="draft-preview-heading"
+          className="text-center text-[10px] uppercase tracking-[0.4em] text-[#6b7280]"
+        >
+          Home · A-tier draft
+        </p>
+        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[#9aa1ae]">
+          When someone matters, Stack helps you answer without sounding off.
+        </p>
+        <div className="mt-8 border border-[#2a2e36] bg-[#12161c] p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#2a2e36]/80 pb-3">
+            <div>
+              <p className="text-sm font-semibold text-[#e8eaef]">Raven</p>
+              <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[#6b7280]">A-Tier</p>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-amber-500/45 px-2 py-1 text-amber-100/95">
+              <span className="text-[11px] font-semibold tabular-nums">78</span>
+              <span className="max-w-[5.5rem] text-[7px] font-medium leading-tight text-[#a8adb8]">
+                Looks steady · tap
+              </span>
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] leading-snug text-[#8b929e]">
+            &ldquo;Haha okay - let&apos;s do Thursday.&rdquo;
+          </p>
+          <div className="mt-4 border border-[#2a2e36] bg-[#0b0e11] p-3">
+            <p className="text-[9px] uppercase tracking-[0.2em] text-[#6b7280]">Suggested reply</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#e8eaef]">
+              Let&apos;s do Sushi at 7; I&apos;ll grab us a spot and text you the place.
+            </p>
+          </div>
+          <p className="mt-3 text-[10px] text-[#6b7280]">Sample only — your drafts come from your real log.</p>
+        </div>
+      </section>
+
+      <footer className="mx-auto max-w-3xl px-6 pb-16 text-center">
+        <Link
+          href="/login?mode=signup"
+          className="inline-flex w-full max-w-sm items-center justify-center rounded-full border border-[#fafafa] bg-transparent px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.28em] text-[#fafafa] transition hover:bg-[#fafafa] hover:text-[#0b0e11] sm:w-auto"
+        >
+          Start here
+        </Link>
+        <p className="mt-6 text-[11px] text-[#6b7280]">
+          Free to try · roster, Texts log, and a first AI draft on us
+        </p>
+      </footer>
+    </div>
+  );
+}

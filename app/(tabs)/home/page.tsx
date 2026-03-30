@@ -3,7 +3,20 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ImagePlus, Lock, LogOut, MessageSquare, RefreshCw, Share, Sparkles, ThumbsUp, UserPlus, Wand2, X } from "lucide-react";
+import {
+  ImagePlus,
+  Loader2,
+  Lock,
+  LogOut,
+  MessageSquare,
+  RefreshCw,
+  Share,
+  Sparkles,
+  ThumbsUp,
+  UserPlus,
+  Wand2,
+  X,
+} from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
@@ -527,6 +540,7 @@ export default function HomePage() {
               latestAt: restoreLatestAt,
               inboundReactionCount: restoreTrail.inboundReactionCount,
               outboundRunSinceTheirText: restoreTrail.outboundRunSinceTheirText,
+              tapbacksDuringYourStreak: restoreTrail.tapbacksDuringYourStreak,
             }
           : undefined;
 
@@ -1367,6 +1381,12 @@ export default function HomePage() {
                                 &ldquo;{clipCtx(prospect.lastInboundBody!)}&rdquo;
                               </p>
                             ) : null}
+                            {isGenerating === prospect.id ? (
+                              <p className="mt-1.5 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-amber-400/85 sm:mt-2">
+                                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin" aria-hidden />
+                                Regenerating draft
+                              </p>
+                            ) : null}
                             <div className="mt-2 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:gap-3">
                               <p className="min-w-0 flex-1 text-sm leading-relaxed text-[var(--rm-text)]">
                                 <span className="text-[1.05em]">{currentDraft}</span>
@@ -1479,6 +1499,12 @@ export default function HomePage() {
                                 ) : null}
                               </div>
                             ) : null}
+                            {generatingNoDraft ? (
+                              <p className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-amber-400/85 sm:mt-1.5">
+                                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin" aria-hidden />
+                                Generating draft
+                              </p>
+                            ) : null}
                             <div className="flex flex-wrap items-center gap-2">
                               {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
                                 <button
@@ -1495,9 +1521,21 @@ export default function HomePage() {
                                   type="button"
                                   onClick={() => handleGenerateDraft(prospect)}
                                   disabled={generatingNoDraft}
-                                  className="inline-flex items-center rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-50"
+                                  className="inline-flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-50"
                                 >
-                                  {generatingNoDraft ? "…" : "Generate"}
+                                  {generatingNoDraft ? (
+                                    <>
+                                      <Loader2
+                                        size={12}
+                                        strokeWidth={2}
+                                        className="shrink-0 animate-spin text-[var(--rm-text-muted)]"
+                                        aria-hidden
+                                      />
+                                      <span>Generating</span>
+                                    </>
+                                  ) : (
+                                    "Generate"
+                                  )}
                                 </button>
                               )}
                               <button

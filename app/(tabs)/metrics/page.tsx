@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, CircleHelp, X } from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
 import { FREE_MESSAGE_LOG_CAP } from "../../../lib/free-tier";
@@ -43,6 +43,16 @@ export default function PulsePage() {
   const [avgHistory, setAvgHistory] = React.useState<{ week: string; avg: number; shortLabel: string }[]>([]);
   const [pulseProspects, setPulseProspects] = React.useState<PortfolioProspect[]>([]);
   const [socialScoreExpanded, setSocialScoreExpanded] = React.useState(false);
+  const [stackInfoOpen, setStackInfoOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!stackInfoOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setStackInfoOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [stackInfoOpen]);
 
   const load = React.useCallback(async () => {
     const client = getSupabaseClient();
@@ -171,7 +181,17 @@ export default function PulsePage() {
 
   return (
     <div className="space-y-8 pb-4">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="relative pr-11 sm:pr-12">
+        <button
+          type="button"
+          onClick={() => setStackInfoOpen(true)}
+          className="absolute right-0 top-0 z-10 flex h-9 w-9 items-center justify-center rounded-full text-[var(--rm-text-muted)] opacity-35 transition hover:bg-[var(--rm-bg-elevated)] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500/50 active:opacity-100"
+          aria-label="What is Stack? Open explainer"
+          aria-haspopup="dialog"
+          aria-expanded={stackInfoOpen}
+        >
+          <CircleHelp size={22} strokeWidth={1.35} aria-hidden />
+        </button>
         <div>
           <Link
             href="/home"
@@ -198,13 +218,41 @@ export default function PulsePage() {
           </p>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
             Who you&apos;ve put on your roster, whether you&apos;re keeping up, and how much you&apos;re logging.
-            Briefing at the bottom = plain English; Home = where you send drafts.
           </p>
-          <details className="mt-4 max-w-xl border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-sm">
-            <summary className="cursor-pointer font-medium text-[var(--rm-text)]">
-              What is Stack? (and what it&apos;s not)
-            </summary>
-            <div className="mt-3 space-y-2.5 text-[var(--rm-text-muted)] leading-relaxed">
+        </div>
+      </header>
+
+      {stackInfoOpen ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center sm:p-6"
+          role="presentation"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close explainer"
+            onClick={() => setStackInfoOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pulse-stack-info-title"
+            className="relative z-[1] max-h-[min(85dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-5 shadow-2xl sm:p-6"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="pulse-stack-info-title" className="text-base font-semibold text-[var(--rm-text)]">
+                What is Stack? (and what it&apos;s not)
+              </h2>
+              <button
+                type="button"
+                onClick={() => setStackInfoOpen(false)}
+                className="shrink-0 rounded-full p-1 text-[var(--rm-text-muted)] transition hover:bg-[var(--rm-bg)] hover:text-[var(--rm-text)]"
+                aria-label="Close"
+              >
+                <X size={18} strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="mt-4 space-y-2.5 text-sm leading-relaxed text-[var(--rm-text-muted)]">
               <p>
                 <strong className="text-[var(--rm-text)]">For:</strong> people you want to prioritize in your life.
                 A / B / C is how you rank contact with them; <strong className="text-[var(--rm-text)]">Style</strong> is how
@@ -222,9 +270,9 @@ export default function PulsePage() {
                 generic CRM. No b-day fields, no calendar sync — roster, logs, social score, and AI where it helps.
               </p>
             </div>
-          </details>
+          </div>
         </div>
-      </header>
+      ) : null}
 
       {error ? (
         <div className="border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>
@@ -323,11 +371,11 @@ export default function PulsePage() {
                 {volumeWeeks.map((w) => {
                   const pct = Math.max(8, (w.count / maxVol) * 100);
                   return (
-                    <div key={w.week} className="flex min-w-0 flex-1 flex-col">
-                      <div className="flex min-h-0 flex-1 flex-col justify-end">
+                    <div key={w.week} className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      <div className="flex min-h-0 flex-1 flex-col justify-end rounded-b-sm bg-[var(--rm-bg)]/80">
                         <div
                           className="mx-auto w-full max-w-[2.75rem] rounded-t-sm bg-gradient-to-t from-amber-900/50 to-amber-500/40"
-                          style={{ height: `${pct}%` }}
+                          style={{ height: `${pct}%`, minHeight: "0.5rem" }}
                           title={`${formatIsoWeekTooltipPrefix(w.week)} · ${w.count} messages logged`}
                         />
                       </div>
@@ -383,11 +431,11 @@ export default function PulsePage() {
                 {avgHistory.map((h) => {
                   const pct = Math.max(8, (h.avg / maxAvgHist) * 100);
                   return (
-                    <div key={h.week} className="flex min-w-0 flex-1 flex-col">
-                      <div className="flex min-h-0 flex-1 flex-col justify-end">
+                    <div key={h.week} className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      <div className="flex min-h-0 flex-1 flex-col justify-end rounded-b-sm bg-[var(--rm-bg)]/80">
                         <div
                           className="mx-auto w-full max-w-[2.75rem] rounded-t-sm bg-gradient-to-t from-emerald-900/40 to-emerald-500/35"
-                          style={{ height: `${pct}%` }}
+                          style={{ height: `${pct}%`, minHeight: "0.5rem" }}
                           title={`${formatIsoWeekTooltipPrefix(h.week)} · social score ${h.avg} / 100`}
                         />
                       </div>
