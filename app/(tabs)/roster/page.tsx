@@ -120,7 +120,10 @@ function RosterPageInner() {
       else if (m.direction === "outbound") ob += 1;
     }
     if (ob >= 4 && ob > ib * 2) {
-      return "Audit: Outbound-heavy on a C-tier thread — observation mode beats pursuit until they re-engage.";
+      const sum = ib + ob;
+      const yourPct = sum > 0 ? Math.round((ob / sum) * 100) : 0;
+      const who = (selectedProspect.name || "They").split(/\s+/)[0] || "They";
+      return `You marked ${who} as C-tier, but ${yourPct}% of what you logged here is you talking. That’s a lot of effort for someone in the casual column — let them come to you.`;
     }
     return null;
   }, [selectedProspect, prospectMessages]);
@@ -897,7 +900,7 @@ function RosterPageInner() {
                 </p>
                 {rosterCommandAudit ? (
                   <p className="border border-amber-500/35 bg-amber-950/20 px-3 py-2 text-xs leading-snug text-amber-100/90">
-                    <span className="font-semibold uppercase tracking-[0.15em] text-amber-400/95">Tactical · </span>
+                    <span className="font-semibold uppercase tracking-[0.15em] text-amber-400/95">Heads up · </span>
                     {rosterCommandAudit}
                   </p>
                 ) : null}

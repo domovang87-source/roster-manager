@@ -1,9 +1,9 @@
 import type { PortfolioProspect } from "./portfolio-stats";
 import { isAtGhostingRisk } from "./portfolio-stats";
 
-/** Shown when user expands Active Charisma help on Pulse — keep short; details live in the synopsis below. */
+/** Shown when user expands Active Charisma help on Pulse — plain talk, not a manual. */
 export const SOCIAL_SCORE_EXPLAINER =
-  "Your roster Active Charisma Score (0–100) is how your real behavior matches who you ranked (A / B / C), the check-in targets you set in Rhythm, and what you log under Texts. Not a moral grade — it’s whether the app’s picture of you matches what you said you wanted.";
+  "Active Charisma (0–100) is blunt: do your real texts match how you ranked people (A/B/C), the check-in pace you picked in Rhythm, and what you actually log? It’s not a moral grade — it’s whether your behavior matches your own rules.";
 
 function firstName(full: string): string {
   return (full.split(/\s+/)[0] || full).replace(/,$/, "");
@@ -14,9 +14,6 @@ function daysSinceLastOutboundMs(ctx: PortfolioProspect["momentumContext"], now:
   return (now.getTime() - new Date(ctx.lastOutboundAt).getTime()) / 86_400_000;
 }
 
-/**
- * User’s own check-in goal (Rhythm / tier) vs last logged outbound — rough “behind schedule” flag.
- */
 function isBehindOwnCheckInGoal(p: PortfolioProspect, now: Date): boolean {
   const ctx = p.momentumContext;
   if (!ctx || ctx.total === 0) return false;
@@ -43,17 +40,17 @@ export function buildSocialScoreSynopsis(
   const x = Math.round(avg * 10) / 10;
 
   if (prospects.length === 0) {
-    return `Your Active Charisma Score is ${x} out of 100. Add people under People when you are ready to track who you are actually investing in.`;
+    return `Score’s ${x}/100 on paper — add people under People when you’re ready to mean it.`;
   }
 
   if (activityCount === 0) {
-    return `Your Active Charisma Score is ${x} out of 100 until you log something under Texts. Save a screenshot or a quick note so the score reflects real threads, not guesses.`;
+    return `Score’s ${x}/100 but you haven’t logged a thread yet. Screenshot or quick log — otherwise we’re guessing.`;
   }
 
   const aListGhost = prospects.filter((p) => p.tier === "A" && isAtGhostingRisk(p, now));
   if (aListGhost.length > 0) {
     const n = firstName(aListGhost[0].name);
-    return `Your Active Charisma Score is ${x} out of 100 in part because ${n} is someone you marked top priority and they texted you last — you have not replied in the app’s eyes. That drags your score because this list is about who you said you would prioritize. Text ${n} back, or log what you already sent under Texts if you replied outside the app.`;
+    return `${x}/100 partly because ${n} is A-list, they texted last, and you’ve got nothing logged back. Either reply or log what you already sent — you said they were top tier.`;
   }
 
   const behind = prospects
@@ -67,16 +64,16 @@ export function buildSocialScoreSynopsis(
     const p0 = behind[0];
     const n = firstName(p0.name);
     const goal = p0.momentumContext?.remindAfterDays ?? 7;
-    return `Your Active Charisma Score is ${x} out of 100 because the check-in pace you set in Rhythm (about every ${goal} day${goal === 1 ? "" : "s"} for that tier) is not lining up with what is logged for ${n} and possibly others. Send a check-in or log a touchpoint under Texts to bring this up.`;
+    return `${x}/100 because you told Rhythm ~every ${goal} day${goal === 1 ? "" : "s"} for that tier, and ${n} (and maybe others) doesn’t match what you logged. Touch base or log what you did.`;
   }
 
   if (avg < 45) {
-    return `Your Active Charisma Score is ${x} out of 100 — several threads look quiet compared to the priorities you set. Small replies and logging what you send are the fastest way to move this number.`;
+    return `${x}/100 — a bunch of threads look dusty vs how you ranked people. Small replies + honest logging are the fastest fix.`;
   }
 
   if (avg >= 68) {
-    return `Your Active Charisma Score is ${x} out of 100. You are broadly keeping up with the people on this list relative to what you told the app. Keep Texts updated so it stays true.`;
+    return `${x}/100 — you’re mostly walking the walk for how you sorted your roster. Keep Texts honest so it stays true.`;
   }
 
-  return `Your Active Charisma Score is ${x} out of 100. Some relationships look on track; others could use a nudge to match how you ranked them. Reply where it counts and log what you do.`;
+  return `${x}/100 — mixed bag. Some chats match your priorities; others need a nudge. Put energy where you ranked it.`;
 }

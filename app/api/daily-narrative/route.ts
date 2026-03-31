@@ -124,15 +124,19 @@ export async function GET() {
       const pid = String(p.id);
       const c7 = count7dByProspect.get(pid) ?? 0;
       if (computeEnergyLeakFlag(tier, c7, maxA7d, hasATier)) {
+        const who = String(p.name ?? "Them").split(/\s+/)[0] || "Them";
         tacticalNotes.push(
-          `⚠️ Energy leak: ${p.name as string} (C-tier) logged more touches in 7d than your busiest A — re-allocate attention.`
+          `Energy leak: ${who} is supposed to be casual (C-tier), but they’ve logged more touches in the last 7 days than your busiest A-list person. Your focus is sneaking the wrong direction.`
         );
       }
       if (tier === "C") {
         const st = ibObByProspect.get(pid);
         if (st && st.ib + st.ob >= 4 && st.ob >= st.ib * 3 && st.ob >= 5) {
+          const who = String(p.name ?? "Them").split(/\s+/)[0] || "Them";
+          const sum = st.ib + st.ob;
+          const yourPct = sum > 0 ? Math.round((st.ob / sum) * 100) : 0;
           tacticalNotes.push(
-            `Audit: ${p.name as string} (C) is outbound-dominant in your log — observation mode beats pursuit.`
+            `Didn’t you say ${who} was C-tier? In your log with them, ${yourPct}% of the lines are yours. That’s you carrying a “low priority” label — back off and let them earn the next move.`
           );
         }
       }
@@ -155,13 +159,15 @@ export async function GET() {
       const last = lastAnyActivity.get(pid);
 
       if (!last) {
-        staleProspects.push(`${name} (${tier}-Tier) — no activity logged yet`);
+        staleProspects.push(`${name} (${tier}-tier) — nothing logged yet, so the app can’t see a thread`);
         continue;
       }
 
       const daysSince = Math.floor((now - new Date(last).getTime()) / 86_400_000);
       if (daysSince >= threshold) {
-        staleProspects.push(`${name} (${tier}-Tier) — ${daysSince}d since last interaction, threshold is ${threshold}d`);
+        staleProspects.push(
+          `${name}: ${daysSince} days since you logged anything — you told the app ~every ${threshold} days for ${tier}-tier. Catch up or log what you already did.`
+        );
       }
 
       const inAt = lastInbound.get(pid);
@@ -177,20 +183,15 @@ export async function GET() {
 
     const snippets: string[] = [];
     if (staleProspects.length > 0) {
-      snippets.push(
-        `Overdue: ${staleProspects
-          .slice(0, 4)
-          .map((s) => s.replace(/\s+—\s+threshold.*$/i, ""))
-          .join("; ")}.`
-      );
+      snippets.push(`Behind: ${staleProspects.slice(0, 4).join(" · ")}`);
     } else {
-      snippets.push("Everyone is up to date.");
+      snippets.push("Nobody’s glaringly overdue by the rhythms you set.");
     }
     if (activeANames.length > 0) {
-      snippets.push(`A-tier with a recent text from them: ${activeANames.join(", ")}.`);
+      snippets.push(`Your A-list pinged you recently: ${activeANames.join(", ")} — don’t leave them on read (or log if you already replied).`);
     }
     if (draftCount > 0) {
-      snippets.push(`${draftCount} draft(s) waiting.`);
+      snippets.push(`${draftCount} draft${draftCount === 1 ? "" : "s"} sitting there — send or delete, your call.`);
     }
 
     const synopsis = snippets.join(" ").trim() || allClear;

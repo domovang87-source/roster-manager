@@ -51,7 +51,7 @@ import { tacticalNoteFromContext } from "../../../lib/pulse-tactical-audit";
 
 const PRO_REGEN_LIMIT = 5;
 const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
-const MARIN_DEMO_DISMISSED_KEY = "stack_marin_demo_dismissed_v1";
+const ROBIN_DEMO_DISMISSED_KEY = "stack_robin_demo_dismissed_v1";
 
 const ELITE_TONES = [
   { id: "balanced", label: "Balanced" },
@@ -119,11 +119,11 @@ export default function HomePage() {
   const [activityCount, setActivityCount] = React.useState(0);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
   const [shareTip, setShareTip] = React.useState<{ prospectId: string; message: string } | null>(null);
-  const [marinDemoDismissed, setMarinDemoDismissed] = React.useState(false);
+  const [robinDemoDismissed, setRobinDemoDismissed] = React.useState(false);
   React.useEffect(() => {
     try {
-      if (typeof window !== "undefined" && localStorage.getItem(MARIN_DEMO_DISMISSED_KEY) === "1") {
-        setMarinDemoDismissed(true);
+      if (typeof window !== "undefined" && localStorage.getItem(ROBIN_DEMO_DISMISSED_KEY) === "1") {
+        setRobinDemoDismissed(true);
       }
     } catch {
       /* ignore */
@@ -1303,14 +1303,14 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      {/* Marin demo — loss leader example */}
-      {hasProspects && !hasActivity && !marinDemoDismissed ? (
+      {/* Robin demo — loss leader example */}
+      {hasProspects && !hasActivity && !robinDemoDismissed ? (
         <section className="relative border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 shadow-[0_0_0_1px_rgba(251,191,36,0.12),0_20px_50px_rgba(0,0,0,0.45)] sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Example card</p>
               <h2 className="mt-1 text-base font-semibold tracking-wide text-[var(--rm-text)]">
-                The Loss Leader <span className="text-[var(--rm-text-muted)] font-normal">(Marin)</span>
+                The Loss Leader <span className="text-[var(--rm-text-muted)] font-normal">(Robin)</span>
               </h2>
               <p className="mt-1 text-xs text-[var(--rm-text-muted)]">
                 C-tier · ~90% your outbound · 6d since their last real line —{" "}
@@ -1322,11 +1322,11 @@ export default function HomePage() {
               type="button"
               onClick={() => {
                 try {
-                  localStorage.setItem(MARIN_DEMO_DISMISSED_KEY, "1");
+                  localStorage.setItem(ROBIN_DEMO_DISMISSED_KEY, "1");
                 } catch {
                   /* ignore */
                 }
-                setMarinDemoDismissed(true);
+                setRobinDemoDismissed(true);
               }}
               className="shrink-0 border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:border-amber-500/40 hover:text-[var(--rm-text)]"
             >
@@ -1423,7 +1423,8 @@ export default function HomePage() {
                     const tacticalAudit = tacticalNoteFromContext(
                       prospect.tier,
                       prospect.momentumContext,
-                      prospect.momentum
+                      prospect.momentum,
+                      prospect.name
                     );
 
                     return (
@@ -1536,7 +1537,7 @@ export default function HomePage() {
                             data-stack-card-stop
                           >
                             <span className="font-semibold uppercase tracking-[0.12em] text-amber-400/95">
-                              Tactical ·{" "}
+                              Heads up ·{" "}
                             </span>
                             {tacticalAudit}
                           </p>

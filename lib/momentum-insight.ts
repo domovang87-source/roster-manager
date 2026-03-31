@@ -98,14 +98,14 @@ function lastOutboundTopicSnippet(lastOutbound: string | undefined): string | nu
 
 /** One short line beside the number. */
 export function momentumTeaser(name: string, score: number, ctx: MomentumContext | undefined, now = new Date()): string {
-  if (!ctx || ctx.total === 0) return "Tap for details";
+  if (!ctx || ctx.total === 0) return "Tap for the story";
 
   if (ctx.latestDirection === "inbound" && isVeryShortInboundBody(ctx.lastInboundPreview)) {
-    return "Last line was tiny · tap";
+    return "They left a crumb, not a paragraph · tap";
   }
 
   if (ctx.latestDirection === "inbound" && ctx.latestAt) {
-    return `They texted last · ${shortAgo(ctx.latestAt, now)}`;
+    return `Ball’s in your court · they pinged ${shortAgo(ctx.latestAt, now)}`;
   }
 
   if (ctx.latestDirection === "outbound" && ctx.latestAt) {
@@ -114,19 +114,19 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
     const r = ctx.inboundReactionCount ?? 0;
     const youVerb = ctx.cadenceFromNote ? "You logged last" : "You texted last";
     if (tapbackChaseFromContext(ctx)) {
-      return `You’re carrying it · text reacts only · ${shortAgo(ctx.latestAt, now)}`;
+      return `You’re writing essays; they’re only tapping reacts · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (ibt === 0 && r >= 1 && (ctx.outboundText ?? 0) >= 2) {
-      return `They liked, didn’t type · ${shortAgo(ctx.latestAt, now)}`;
+      return `Heart reacts, zero sentences · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (run >= 4) {
-      return `You’ve carried the last stretch · ${shortAgo(ctx.latestAt, now)}`;
+      return `${run} pings from you, still quiet from them · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (run === 3) {
-      return `3 sends, no reply yet · ${shortAgo(ctx.latestAt, now)}`;
+      return `Triple text energy, no real reply · ${shortAgo(ctx.latestAt, now)}`;
     }
     if (run === 2) {
-      return `2 sends, waiting on them · ${shortAgo(ctx.latestAt, now)}`;
+      return `You doubled up — now wait · ${shortAgo(ctx.latestAt, now)}`;
     }
     return `${youVerb} · ${shortAgo(ctx.latestAt, now)}`;
   }
@@ -134,15 +134,15 @@ export function momentumTeaser(name: string, score: number, ctx: MomentumContext
   const obT = ctx.outboundText ?? ctx.outbound;
   const inT = (ctx.inboundText ?? ctx.inbound) + (ctx.inboundNoteCredit ?? 0);
   if (inT > 0 && obT > 0 && inT > Math.ceil(obT * 1.25)) {
-    return "They’ve been chattier lately";
+    return "They’ve been louder than you lately · tap";
   }
   if (obT > 0 && inT > 0 && obT > Math.ceil(inT * 1.25)) {
-    return "You’ve sent more lately · tap";
+    return "You’ve been the chatty one · tap";
   }
 
-  if (isCadenceOverdue(ctx, now)) return "Past your check-in pace · tap";
+  if (isCadenceOverdue(ctx, now)) return "You’re past the check-in you picked · tap";
 
-  return score >= 62 ? "Looks steady · tap" : "Tap for the read";
+  return score >= 62 ? "Pretty balanced · tap" : "Tap — I’ll explain the number";
 }
 
 /** Brief popover — book blurb, not a manual. */
@@ -151,7 +151,7 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
 
   if (!ctx || ctx.total === 0) {
     return [
-      `Log something for ${first} under Texts — then this number tracks timing and how the thread reads from what you saved.`,
+      `Drop something in Texts for ${first} — then this score actually means something instead of guessing.`,
     ];
   }
 
@@ -163,19 +163,19 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
 
   if (shortClose) {
     return [
-      `${score}/100 — ${first} ended on a very small line (a beat, not a chapter).`,
+      `${score}/100 — ${first} left you a tiny line (like “k” or “lol”), not a real turn.`,
       overdue
-        ? `You’re past the ~${goal}-day target you set in Rhythm — when you want back in, a real text fixes that.`
-        : `You’re not failing the pace you chose; the only real question is whether you want a soft closing note or to let it breathe.`,
+        ? `You’re past the ~${goal}-day rhythm you chose. If you still care, say something real; if not, you’re allowed to let it die.`
+        : `No shame either way: either send one clean line or let the thread go quiet on purpose.`,
     ];
   }
 
   if (theyLast && ctx.latestAt) {
     return [
-      `${score}/100 — they texted last ${shortAgo(ctx.latestAt, now)}.`,
+      `${score}/100 — ${first} texted last (${shortAgo(ctx.latestAt, now)}).`,
       overdue
-        ? `You’re past the ~${goal}-day check-in you set in Rhythm — reply when you mean it.`
-        : `No clock drama yet — answer when you actually want to.`,
+        ? `You told Rhythm ~${goal} days for this tier — you’re past that. Reply when you mean it, or log what you already sent outside the app.`
+        : `You’re not “late” yet by your own rules. Answer when you want to, not because the app guilted you.`,
     ];
   }
 
@@ -190,51 +190,47 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
     const cadenceNote = ctx.cadenceFromNote === true;
     const lines: string[] = [
       cadenceNote
-        ? `${score}/100 — your last log reads like real-life context (${shortAgo(ctx.lastOutboundAt, now)}), which matters for the check-in pace from Rhythm.`
+        ? `${score}/100 — your last save looks like real life (${shortAgo(ctx.lastOutboundAt, now)}), so Rhythm counts it for your check-in pace.`
         : `${score}/100 — you texted last ${shortAgo(ctx.lastOutboundAt, now)}.`,
     ];
     if (noteHint && ctx.noteCount && ctx.noteCount > 0) {
       const clip = noteHint.length > 140 ? `${noteHint.slice(0, 137)}…` : noteHint;
-      lines.push(`You noted: “${clip}”`);
+      lines.push(`You wrote in notes: “${clip}”`);
     }
 
     if (chaseCtx) {
       lines.push(
-        `They’ve been answering with text reacts, not real messages — you’re doing most of the work. The number comes out lower because reciprocity looks thin.`
+        `They’re answering with taps and reacts, not sentences. You’re doing the emotional labor — the score nudges down because it looks one-sided on paper.`
       );
       lines.push(
-        `Next step: pause until they type something real, or send one short line that needs an actual reply — then let it sit instead of stacking more.`
+        `Chill until they type actual words, or send one short line that needs a real answer — then hands off your phone.`
       );
     } else if (run === 2) {
       lines.push(
         topic != null
-          ? `Since their last real line, you’ve sent 2 on your side; your last touches ${topic}. They haven’t written back yet — that’s what pulls this down, not that you texted twice.`
-          : `Since their last real line, you’ve sent 2 with no written answer yet — that silence is what pulls this down, not “texting too much.”`
+          ? `After their last real text you sent twice; your last one was about ${topic}. Still no written answer — that quiet is what drags the number, not “double texting.”`
+          : `After their last real text you sent twice and got silence. That’s not “you texted too much” — it’s you waiting on someone who hasn’t shown up in writing.`
       );
-      lines.push(`Next step: wait a bit, or change the angle with one new message — then stop until they answer in writing.`);
+      lines.push(`Wait, or send one fresh angle and then stop until they answer like a grown-up.`);
     } else if (run >= 3) {
       lines.push(
         topic != null
-          ? `You’ve sent ${run} since their last real line; your last touches ${topic}. Still no written answer — that one-sided stretch is why this reads lower.`
-          : `You’ve sent ${run} since their last real line with no written answer — one-sided stretches read lower here.`
+          ? `${run} texts from you since their last real line; last touch was ${topic}. Still nothing back — yeah, the score is going to look rough.`
+          : `${run} texts from you since their last real line. At this point you’re carrying the whole conversation.`
       );
-      lines.push(`Next step: pull back and let them close the gap, unless one final clear ping is truly worth it — then log what you sent.`);
+      lines.push(`Back up. Let them walk across the gap — unless one last message is honestly worth it, then log it and stop.`);
     }
 
     if (!chaseCtx && ibt === 0 && rCount >= 1 && ob >= 2) {
       lines.push(
         rCount === 1
-          ? "They only sent a text react — no written reply yet."
-          : `${rCount} text reacts, no real line back yet — light engagement on paper.`
+          ? "They fired a react — not a reply."
+          : `${rCount} reacts, still no real message. Cute on iMessage, rough on your score.`
       );
     } else if (!chaseCtx && rCount >= 1 && run >= 3 && ibt > 0) {
-      lines.push(
-        "Mostly your words lately; they’ve used text reacts more than new sentences — that imbalance shows up here."
-      );
+      lines.push("Mostly you talking; they’re on react duty. That shows up here.");
     } else if (ob > ibt * 2 && ibt > 0 && run < 2) {
-      lines.push(
-        "You’ve out-sent them in the log overall — that balance shows up as a small dip, not a judgment on how much you text."
-      );
+      lines.push("Overall you’ve typed more than them in what you saved — small ding, not a character judgment.");
     }
 
     return lines;
@@ -244,18 +240,18 @@ export function momentumPopoverLines(name: string, score: number, ctx: MomentumC
   if (ctx.noteCount && ctx.noteCount > 0 && noteHint) {
     const clip = noteHint.length > 120 ? `${noteHint.slice(0, 117)}…` : noteHint;
     return [
-      `${score}/100 — your thread is mostly in notes right now.`,
-      `Latest: “${clip}”`,
+      `${score}/100 — this thread is basically living in your notes.`,
+      `Latest note: “${clip}”`,
       overdue
-        ? `You’re past the ~${goal}-day window you set in Rhythm — a newer log line may reset how that reads.`
-        : `If you just logged a call, date, or meetup, Rhythm timing should read kinder.`,
+        ? `You’re past the ~${goal}-day window you picked — log a fresh touch when you actually reach out.`
+        : `If that note was a date or call, timing should look kinder once it’s reflected in Texts.`,
     ];
   }
 
   return [
-    `${score}/100 — enough in the log to read the thread.`,
+    `${score}/100 — enough logged to judge the vibe.`,
     overdue
-      ? `You’re past the ~${goal}-day window you picked in Rhythm.`
-      : `If this feels off, a bubble might be on the wrong side in Texts.`,
+      ? `You’re past the ~${goal}-day check-in you set for yourself.`
+      : `If this feels wrong, flip a bubble to the right side in Texts — the score only knows what you logged.`,
   ];
 }

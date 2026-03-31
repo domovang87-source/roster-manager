@@ -193,7 +193,11 @@ export default function PulsePage() {
     setSocialEquityRows7d(eq7d.slice(0, 10));
     setPulseTacticalClient(
       buildPulseTacticalNotes(
-        prospects.map((r) => ({ id: String(r.id), tier: coerceTier(r.tier) })),
+        prospects.map((r) => ({
+          id: String(r.id),
+          tier: coerceTier(r.tier),
+          name: (r.name as string) || "Them",
+        })),
         fullMessages as { prospect_id?: string; created_at?: string; direction?: string }[]
       )
     );
@@ -704,14 +708,14 @@ export default function PulsePage() {
           </details>
 
           <section className="border border-amber-500/35 bg-amber-950/[0.12] p-4 shadow-[0_0_0_1px_rgba(251,191,36,0.08)] sm:p-6">
-            <p className="text-[10px] uppercase tracking-[0.35em] text-amber-200/85">Command briefing · audit</p>
-            <h2 className="mt-1 text-base font-semibold tracking-tight text-[var(--rm-text)]">Situation report</h2>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-amber-200/85">Straight talk</p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-[var(--rm-text)]">What’s actually going on</h2>
             <p className="mt-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
               {briefLoading ? "Loading…" : brief}
             </p>
             {!briefLoading && mergedTacticalNotes.length > 0 ? (
               <div className="mt-4 space-y-2 border-t border-amber-500/25 pt-4">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Tactical notes</p>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Worth a look</p>
                 <ul className="space-y-2 text-sm leading-snug text-amber-100/90">
                   {mergedTacticalNotes.map((line, i) => (
                     <li key={i} className="flex gap-2">

@@ -3,15 +3,22 @@ import type { Tier } from "./roster-portfolio-compute";
 
 type Msg = { prospect_id?: string; created_at?: string; direction?: string };
 
+export type TacticalProspect = { id: string; tier: Tier; name: string };
+
+function firstName(full: string): string {
+  return (full.split(/\s+/)[0] || full || "They").replace(/,$/, "");
+}
+
 /**
  * Client-side tactical lines when logs break tier discipline (uses viewer local time).
  */
 export function buildPulseTacticalNotes(
-  prospects: { id: string; tier: Tier }[],
+  prospects: TacticalProspect[],
   messages: Msg[],
   now = new Date()
 ): string[] {
   const tierById = new Map(prospects.map((p) => [p.id, p.tier]));
+  const nameById = new Map(prospects.map((p) => [p.id, p.name || "Them"]));
   const sevenAgo = now.getTime() - 7 * 86_400_000;
   const notes: string[] = [];
 
@@ -34,8 +41,9 @@ export function buildPulseTacticalNotes(
     if (p.tier !== "C" || !hasA) continue;
     const n = count7d.get(p.id) ?? 0;
     if (n > maxA7d) {
+      const who = firstName(p.name);
       notes.push(
-        "⚠️ Energy leak: a C-tier is out-logging your busiest A this week — pull attention uphill."
+        `You put ${who} in casual (C-tier), but this week they’ve got more logged touches than your busiest A-list person. That’s your attention sliding downhill.`
       );
       break;
     }
@@ -49,8 +57,9 @@ export function buildPulseTacticalNotes(
     if (!d) continue;
     const h = d.getHours();
     if (h >= 0 && h < 5) {
+      const who = firstName(nameById.get(pid) ?? "them");
       notes.push(
-        "Tactical: Outbound to C-tier logged between 12am–5am local — revert to observation mode; reserve prime energy for A-tier."
+        `Late-night text to ${who} (C-tier) between midnight and 5am? That’s prime-you hours going to someone you ranked low. Go to bed; save the juice for people you actually prioritized.`
       );
       break;
     }
@@ -62,16 +71,21 @@ export function buildPulseTacticalNotes(
 export function tacticalNoteFromContext(
   tier: Tier,
   ctx: MomentumContext | undefined,
-  momentum: number | undefined
+  momentum: number | undefined,
+  displayName: string
 ): string | null {
   if (!ctx || ctx.total === 0) return null;
   const ob = ctx.outboundText ?? ctx.outbound;
   const ib = ctx.inboundText ?? ctx.inbound;
+  const who = firstName(displayName);
+  const lines = ib + ob;
+  const yourPct = lines > 0 ? Math.round((ob / lines) * 100) : 0;
+
   if (tier === "C" && ob >= 4 && ob > ib * 2) {
-    return "Audit: Heavy outbound on C-tier — match cadence to tier. Observation beats pursuit here.";
+    return `Didn’t you tag ${who} as C-tier? In what you logged with them, ${yourPct}% of the lines are yours — that’s you doing the work for a “casual” slot. Cool it unless you meant to upgrade them.`;
   }
   if (tier === "C" && (momentum ?? 0) < 25 && ob >= 3) {
-    return "Audit: Low thread heat on C with volume from you — stop feeding. Let the frame rest.";
+    return `${who} is C-tier, the thread’s basically cold (${momentum ?? 0}/100), and you’re still the one blowing up the log. Stop feeding it air.`;
   }
   return null;
 }
