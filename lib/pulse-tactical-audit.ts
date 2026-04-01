@@ -43,7 +43,7 @@ export function buildPulseTacticalNotes(
     if (n > maxA7d) {
       const who = firstName(p.name);
       notes.push(
-        `You put ${who} in casual (C-tier), but this week they’ve got more logged touches than your busiest A-list person. That’s your attention sliding downhill.`
+        `You put ${who} in casual (C-tier), but this week they’ve got more logged texts / engagement than your busiest A-list person. That’s your attention sliding downhill.`
       );
       break;
     }
@@ -82,7 +82,7 @@ export function tacticalNoteFromContext(
   const yourPct = lines > 0 ? Math.round((ob / lines) * 100) : 0;
 
   if (tier === "C" && ob >= 4 && ob > ib * 2) {
-    return `Didn’t you tag ${who} as C-tier? In what you logged with them, ${yourPct}% of the lines are yours — that’s you doing the work for a “casual” slot. Cool it unless you meant to upgrade them.`;
+    return `Didn’t you tag ${who} as C-tier? ${yourPct}% of what you logged there is your texts / engagement — heavy lift for a “casual” slot. Cool it unless you meant to upgrade them.`;
   }
   if (tier === "C" && (momentum ?? 0) < 25 && ob >= 3) {
     return `${who} is C-tier, the thread’s basically cold (${momentum ?? 0}/100), and you’re still the one blowing up the log. Stop feeding it air.`;

@@ -29,7 +29,7 @@ function SocialEquityStyleInfo() {
         type="button"
         onClick={() => setOpen(true)}
         className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--rm-border)]/80 text-[var(--rm-text-muted)] transition hover:border-amber-500/40 hover:bg-amber-500/5 hover:text-amber-200/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500/40"
-        aria-label="What do thread style tags mean?"
+        aria-label="What do their-read tags mean?"
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -55,7 +55,7 @@ function SocialEquityStyleInfo() {
                 id="social-equity-style-title"
                 className="text-sm font-semibold tracking-tight text-[var(--rm-text)]"
               >
-                Thread style tags
+                Their read
               </h2>
               <button
                 type="button"
@@ -141,10 +141,8 @@ export function SocialEquityPanel({
         <div className="flex justify-end">
           <SocialEquityStyleInfo />
         </div>
-        <p className="text-xs leading-relaxed text-[var(--rm-text-muted)]">
-          Log direction (you vs them) under <strong className="text-[var(--rm-text)]">Texts</strong> — then this chart
-          shows where you&apos;re over-giving. Tap <strong className="text-[var(--rm-text)]">i</strong> for what style
-          tags mean (they describe <strong className="text-[var(--rm-text)]">you</strong> in the log, not them).
+        <p className="text-[11px] leading-snug text-[var(--rm-text-muted)]">
+          Log <strong className="text-[var(--rm-text)]">Texts</strong> with direction. Tap <strong className="text-[var(--rm-text)]">i</strong> for tags.
         </p>
       </div>
     );
@@ -171,9 +169,8 @@ export function SocialEquityPanel({
         </div>
         <SocialEquityStyleInfo />
         </div>
-        <p className="text-xs leading-relaxed text-[var(--rm-text-muted)]">
-          No thread lines in the last 7 days — switch to <strong className="text-[var(--rm-text)]">All logged</strong>{" "}
-          for the full picture, or log something under <strong className="text-[var(--rm-text)]">Texts</strong>.
+        <p className="text-[11px] leading-snug text-[var(--rm-text-muted)]">
+          No texts in 7d — try <strong className="text-[var(--rm-text)]">All logged</strong> or log <strong className="text-[var(--rm-text)]">Texts</strong>.
         </p>
       </div>
     );
@@ -207,9 +204,6 @@ export function SocialEquityPanel({
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="hidden text-[9px] text-[var(--rm-text-muted)]/80 sm:inline">
-              {win === "7d" ? "Trend · lately" : "Full log"}
-            </span>
             <SocialEquityStyleInfo />
           </div>
         </div>
@@ -218,18 +212,16 @@ export function SocialEquityPanel({
           <SocialEquityStyleInfo />
         </div>
       )}
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] leading-snug text-[var(--rm-text-muted)]">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 shrink-0 rounded-[2px] bg-emerald-500/65" aria-hidden />
-          <span>Them</span>
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] text-[var(--rm-text-muted)]">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-[1px] bg-violet-500/75" aria-hidden />
+          Their texts
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 shrink-0 rounded-[2px] bg-amber-500/60" aria-hidden />
-          <span>You</span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-[1px] bg-amber-500/60" aria-hidden />
+          Your texts / engagement
         </span>
-        <span className="w-full text-[var(--rm-text-muted)]/85 sm:w-auto sm:pl-1">
-          Name = them · tag = <span className="text-[var(--rm-text)]/90">you</span> in the log
-        </span>
+        <span className="text-[var(--rm-text-muted)]/90">Name · tier · their read</span>
       </p>
       <ul className="divide-y divide-[var(--rm-border)]/35">
         {active.map((r) => {
@@ -244,9 +236,7 @@ export function SocialEquityPanel({
             >
               <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
                 <div className="min-w-0">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)]">
-                    With them
-                  </p>
+                  <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Contact</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] font-semibold tracking-tight text-[var(--rm-text)]">
                     <span className={`shrink-0 font-mono text-[10px] font-bold ${tierDot}`}>{r.tier}</span>
                     <span className="truncate">{r.name}</span>
@@ -258,36 +248,36 @@ export function SocialEquityPanel({
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)]">
-                    You in the log
-                  </p>
+                  <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Their read</p>
                   <p
                     className="mt-0.5 text-[11px] font-medium text-[var(--rm-text)]"
-                    title="How you show up in what you saved — not their personality. Tap i for definitions."
+                    title="Their side of the thread in your log — asymmetry, not mind-reading. Tap i for definitions."
                   >
                     {r.styleLabel}
                   </p>
                 </div>
               </div>
-              <div className="mt-2.5 flex h-2 overflow-hidden rounded-full bg-black/30">
+              <div className="mt-2.5 flex h-2 overflow-hidden rounded-full bg-black/30 ring-1 ring-violet-500/20">
                 <div
-                  className="h-full bg-emerald-500/60"
+                  className="h-full bg-gradient-to-b from-violet-400/80 to-violet-600/55"
                   style={{ width: `${ibPct}%` }}
-                  title={`Them · ${r.inbound} lines`}
+                  title={`Their texts · ${r.inbound} logged`}
                 />
                 <div
-                  className="h-full bg-amber-500/58"
+                  className="h-full bg-gradient-to-b from-amber-400/65 to-amber-600/45"
                   style={{ width: `${100 - ibPct}%` }}
-                  title={`You · ${r.outbound} lines`}
+                  title={`Your texts / engagement · ${r.outbound} logged`}
                 />
               </div>
               <div className="mt-1.5 flex justify-between gap-2 font-mono text-[9px] tabular-nums text-[var(--rm-text-muted)]">
                 <span>
-                  Them <span className="text-emerald-400/80">{r.inbound}</span>
+                  Their texts <span className="text-violet-300/90">{r.inbound}</span>
                 </span>
-                <span className="text-center text-[var(--rm-text-muted)]/90">{r.outboundPct}% your lines</span>
-                <span>
-                  You <span className="text-amber-400/85">{r.outbound}</span>
+                <span className="max-w-[40%] text-center text-[var(--rm-text-muted)]/90 leading-tight">
+                  {r.outboundPct}% yours
+                </span>
+                <span className="text-right">
+                  Yours <span className="text-amber-400/85">{r.outbound}</span>
                 </span>
               </div>
             </li>

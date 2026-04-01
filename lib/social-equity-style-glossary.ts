@@ -1,24 +1,24 @@
 /**
- * Copy for Social Equity thread style tags — must match the four strings from `communicationStyleFromContext`.
+ * Copy for Social Equity tags — must match the four strings from `communicationStyleFromContext`.
  */
 export const SOCIAL_EQUITY_STYLE_INTRO =
-  "Four labels, period. They only describe how you show up in what you logged — not who they are as a person.";
+  "Four tags about their side of the ledger — from line counts you saved, not a read on who they “really” are.";
 
 export const SOCIAL_EQUITY_STYLE_GLOSSARY: readonly { title: string; body: string }[] = [
   {
-    title: "The Investor",
-    body: "You’re doing most of the typing in what you saved — the thread leans on your outbound.",
+    title: "The Minimum",
+    body: "Most rows are yours — their side looks thin in the log. That’s leverage info, not a verdict.",
   },
   {
-    title: "The Magnet",
-    body: "They’re doing most of the typing in what you saved — your side is quieter in the count.",
+    title: "The Driver",
+    body: "Most rows are theirs — they’re heavy in what you captured. The thread’s loud on their side.",
   },
   {
     title: "The Volley",
-    body: "Back-and-forth energy: your lines and theirs are basically even in the log.",
+    body: "Roughly even split — matched energy in the ledger you keep.",
   },
   {
     title: "No read",
-    body: "Not enough logged texts to call it — keep tagging bubbles under Texts until a pattern shows up.",
+    body: "Too little logged to say — keep tagging Texts until the picture firms up.",
   },
 ];

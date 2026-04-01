@@ -1,7 +1,8 @@
--- STACK: Enable access policies for all tables
--- Run in Supabase SQL Editor
--- These are open policies for now (no auth yet).
--- Once Supabase Auth is added, replace with user-scoped policies.
+-- ⚠️  DO NOT RUN THIS FILE IN PRODUCTION — it sets USING (true) on user data tables.
+-- Use instead:
+--   - user-isolation-migration.sql  (prospects, messages, scheduled_replies, tier_rules)
+--   - subscriptions-rls-user-scoped.sql  (subscriptions)
+-- This file is kept only as a historical reference.
 
 BEGIN;
 

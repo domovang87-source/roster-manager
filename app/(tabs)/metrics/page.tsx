@@ -219,7 +219,7 @@ export default function PulsePage() {
     setBriefLoading(true);
     try {
       if (prospects.length === 0 || (countRes.count ?? 0) === 0) {
-        setBrief("Add people and log a text thread — then this becomes a plain-English read on who needs you.");
+        setBrief("Add People + log Texts.");
         setBriefTacticalServer([]);
       } else {
         const controller = new AbortController();
@@ -302,8 +302,8 @@ export default function PulsePage() {
                     : "Elite"}
             </span>
           </p>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
-            Charisma Scores, who&apos;s waiting on you, where your attention actually went — then the paper trail.
+          <p className="mt-2 max-w-md text-xs text-[var(--rm-text-muted)]">
+            Roster momentum · open loops · who&apos;s thin vs loud in the log.
           </p>
         </div>
       </header>
@@ -338,22 +338,14 @@ export default function PulsePage() {
                 <X size={18} strokeWidth={1.5} />
               </button>
             </div>
-            <div className="mt-4 space-y-2.5 text-sm leading-relaxed text-[var(--rm-text-muted)]">
+            <div className="mt-4 space-y-2 text-sm leading-snug text-[var(--rm-text-muted)]">
               <p>
-                <strong className="text-[var(--rm-text)]">For:</strong> people you want to prioritize in your life.
-                A / B / C is how you rank contact with them; <strong className="text-[var(--rm-text)]">Rhythm</strong> is
-                how often you mean to check in — C-tier might be monthly for your parents, A-tier might be daily. Add them
-                under <strong className="text-[var(--rm-text)]">People</strong>, log threads under{" "}
-                <strong className="text-[var(--rm-text)]">Texts</strong> (screenshot or type), and use{" "}
-                <strong className="text-[var(--rm-text)]">Home</strong> when you want drafting help.
+                <strong className="text-[var(--rm-text)]">Stack:</strong> rank people A/B/C, set check-in rhythm, log threads
+                under <strong className="text-[var(--rm-text)]">Texts</strong>, draft on <strong className="text-[var(--rm-text)]">Home</strong>.
               </p>
               <p>
-                <strong className="text-[var(--rm-text)]">Roster</strong> = only who you choose — not your whole
-                contacts app, not “the world.”
-              </p>
-              <p>
-                <strong className="text-[var(--rm-text)]">Not for:</strong> birthdays, a shared calendar, or a
-                generic CRM. No b-day fields, no calendar sync — roster, logs, Active Charisma Score, and AI where it helps.
+                Your roster only — not your whole address book. Data on attention and reciprocity from what you log, not
+                a generic CRM.
               </p>
             </div>
           </div>
@@ -391,21 +383,13 @@ export default function PulsePage() {
                 <X size={18} strokeWidth={1.5} />
               </button>
             </div>
-            <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-200/85">
-              Command doctrine
-            </p>
-            <div className="mt-3 space-y-3 text-sm leading-relaxed text-[var(--rm-text-muted)]">
+            <div className="mt-4 space-y-2 text-sm leading-snug text-[var(--rm-text-muted)]">
               <p>
-                The roster is your capital allocation sheet. When <strong className="text-amber-200/90">C-tier volume</strong>{" "}
-                outruns <strong className="text-amber-400/95">A-tier</strong> in the log, you are bleeding status — busy,
-                not powerful.
+                If <strong className="text-amber-200/90">C-tier</strong> eats more of your logs than{" "}
+                <strong className="text-amber-400/95">A-tier</strong>, your allocation is inverted — power follows focus.
               </p>
-              <p className="border-l-2 border-amber-500/50 pl-3 text-[var(--rm-text)]">
-                Snap to reality: starve the bottom of the funnel. Feed the inner circle first; everyone else gets
-                observation, not pursuit.
-              </p>
-              <p className="text-xs text-[var(--rm-text-muted)]">
-                Mirror is only as honest as your Text logs — direction and timing matter.
+              <p className="border-l-2 border-amber-500/50 pl-3 text-[var(--rm-text)] text-xs">
+                Feed who you said matters. Honest only to the extent your Texts log is.
               </p>
             </div>
           </div>
@@ -461,12 +445,11 @@ export default function PulsePage() {
                 </span>
               </button>
               {socialScoreExpanded ? (
-                <div className="mt-4 space-y-3 border-t border-[var(--rm-border)] pt-4 text-sm leading-relaxed">
+                <div className="mt-4 space-y-2 border-t border-[var(--rm-border)] pt-4 text-xs leading-snug">
                   <p className="text-[var(--rm-text-muted)]">{SOCIAL_SCORE_EXPLAINER}</p>
                   <p className="text-[var(--rm-text)]">{socialSynopsis}</p>
-                  <p className="text-xs text-[var(--rm-text-muted)]">
-                    On <strong className="text-[var(--rm-text)]">Home</strong>, tap someone&apos;s number for that
-                    person only.
+                  <p className="text-[var(--rm-text-muted)]">
+                    <strong className="text-[var(--rm-text)]">Home:</strong> tap the score for one person.
                   </p>
                 </div>
               ) : null}
@@ -476,9 +459,7 @@ export default function PulsePage() {
               <p className="text-[10px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
                 Quick counts · reference
               </p>
-              <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)]">
-                Ops-style totals — nice to have, not the main scoreboard. Open loops and tier split at a glance.
-              </p>
+              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">At a glance.</p>
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="rounded-md border border-[var(--rm-border)]/70 bg-[var(--rm-bg)]/40 px-3 py-3">
                   <p className="text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">Needs reply</p>
@@ -515,8 +496,7 @@ export default function PulsePage() {
                 <p className="mt-4 flex items-start gap-2 border-t border-amber-500/30 pt-3 text-[11px] leading-snug text-amber-100/90">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400/95" strokeWidth={2} aria-hidden />
                   <span>
-                    Energy leak: non–A-list beat your busiest A on 7d volume — see{" "}
-                    <strong className="text-[var(--rm-text)]">Truth Mirror</strong> below.
+                    Someone not A-tier logged more texts / engagement this week than your busiest A — see charts below.
                   </span>
                 </p>
               ) : null}
@@ -526,11 +506,8 @@ export default function PulsePage() {
           <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
             <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Truth mirror</p>
             <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Energy allocation</h2>
-            <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
-              <strong className="text-[var(--rm-text)]/90">Portfolio</strong> = who you said matters (tier).{" "}
-              <strong className="text-[var(--rm-text)]/90">Allocation</strong> = where your logs went in the last 7 days.
-              Tap a <strong className="text-[var(--rm-text)]">pie slice</strong> to jump to that tier on{" "}
-              <strong className="text-[var(--rm-text)]">People</strong>, or tap the card for the Truth Mirror.
+            <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">
+              Rank vs last 7 days of logs. Tap a slice → People. Tap card → details.
             </p>
             <button
               type="button"
@@ -539,8 +516,8 @@ export default function PulsePage() {
             >
               <div className="grid gap-8 sm:grid-cols-[minmax(0,20rem)_1fr] sm:items-center sm:gap-8">
                 <div className="flex w-full min-w-0 flex-col items-center sm:items-start">
-                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">The asset</p>
-                  <p className="mt-1 text-[11px] font-medium text-[var(--rm-text)]">Roster by tier</p>
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Roster</p>
+                  <p className="mt-1 text-[11px] font-medium text-[var(--rm-text)]">By tier</p>
                   {rosterTotal === 0 ? (
                     <p className="mt-4 text-xs text-[var(--rm-text-muted)]">No people yet</p>
                   ) : (
@@ -550,14 +527,10 @@ export default function PulsePage() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">The truth</p>
-                  <p className="mt-1 text-[11px] font-medium text-[var(--rm-text)]">
-                    Top 5 by messages logged (7d)
-                  </p>
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Attention</p>
+                  <p className="mt-1 text-[11px] font-medium text-[var(--rm-text)]">Top 5 · 7 days</p>
                   {allocationTop5.length === 0 || allocationTop5.every((r) => r.count7d === 0) ? (
-                    <p className="mt-4 text-xs text-[var(--rm-text-muted)]">
-                      No messages in the last 7 days — log under Texts to see who&apos;s eating your attention.
-                    </p>
+                    <p className="mt-4 text-xs text-[var(--rm-text-muted)]">Nothing logged in 7d — add Texts.</p>
                   ) : (
                     <ul className="mt-4 space-y-3">
                       {allocationTop5.map((row) => {
@@ -577,7 +550,7 @@ export default function PulsePage() {
                                   <AlertTriangle
                                     className="h-3.5 w-3.5 shrink-0 text-amber-400/95"
                                     strokeWidth={2}
-                                    aria-label="Energy leak: more 7d activity than your busiest A-tier"
+                                    aria-label="Energy leak: more texts and engagement logged in 7d than your busiest A-tier"
                                   />
                                 ) : null}
                                 <span className="truncate font-medium">{row.name}</span>
@@ -606,8 +579,8 @@ export default function PulsePage() {
                   )}
                 </div>
               </div>
-              <p className="mt-5 text-center text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                Tap anywhere · The Truth Mirror
+              <p className="mt-4 text-center text-[9px] uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">
+                Tap for details
               </p>
             </button>
           </section>
@@ -615,11 +588,9 @@ export default function PulsePage() {
           <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
             <p className="text-[10px] uppercase tracking-[0.32em] text-amber-200/75">Truth mirror · equity</p>
             <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Social equity</h2>
-            <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
-              <strong className="text-amber-400/85">Orange</strong> = your lines, <strong className="text-emerald-400/85">green</strong>{" "}
-              = theirs. The name is them; the tag is <strong className="text-[var(--rm-text)]">you</strong> in what you logged. Toggle{" "}
-              <strong className="text-[var(--rm-text)]">Last 7 days</strong> vs{" "}
-              <strong className="text-[var(--rm-text)]">All logged</strong> for trend vs habit.
+            <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">
+              <span className="text-violet-300/90">Violet</span> = their texts · <span className="text-amber-400/85">amber</span> = your texts / engagement · tag ={" "}
+              <span className="text-[var(--rm-text)]">their read</span> (from the ledger).
             </p>
             <SocialEquityPanel rows={socialEquityRows} rows7d={socialEquityRows7d} />
           </section>
@@ -627,13 +598,9 @@ export default function PulsePage() {
           <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
             <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Trajectory</p>
             <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Are you improving?</h2>
-            <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">
-              Same roster Active Charisma Score as the hero card, snapshotted when you open Pulse. Bars are calendar weeks; labels are
-              each week&apos;s <strong className="text-[var(--rm-text)]/90">Monday</strong> — come back often to see the
-              curve.
-            </p>
+            <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Roster score by week (labels = Mondays).</p>
             {avgHistory.length === 0 ? (
-              <p className="mt-6 text-sm text-[var(--rm-text-muted)]">Come back after a few visits to see a shape.</p>
+              <p className="mt-6 text-xs text-[var(--rm-text-muted)]">Open Pulse a few times to see a trend.</p>
             ) : (
               <div className="mt-6 flex h-44 gap-1 sm:gap-2">
                 {avgHistory.map((h) => {
@@ -642,7 +609,7 @@ export default function PulsePage() {
                     <div key={h.week} className="flex min-h-0 min-w-0 flex-1 flex-col">
                       <div className="flex min-h-0 flex-1 flex-col justify-end rounded-b-sm bg-[var(--rm-bg)]/80">
                         <div
-                          className="mx-auto w-full max-w-[2.75rem] rounded-t-sm bg-gradient-to-t from-emerald-900/40 to-emerald-500/35"
+                          className="mx-auto w-full max-w-[2.75rem] rounded-t-sm bg-gradient-to-t from-violet-950/55 to-violet-400/40 shadow-[0_-2px_16px_rgba(139,92,246,0.12)]"
                           style={{ height: `${pct}%`, minHeight: "0.5rem" }}
                           title={`${formatIsoWeekTooltipPrefix(h.week)} · Active Charisma Score ${h.avg} / 100`}
                         />
@@ -663,10 +630,7 @@ export default function PulsePage() {
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Reference only</p>
                   <h2 className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Weekly message volume</h2>
-                  <p className="mt-1 max-w-2xl text-xs leading-snug text-[var(--rm-text-muted)]">
-                    Roster and log totals are in <strong className="text-[var(--rm-text)]">Quick counts</strong> above.
-                    Expand for the last ~8 weeks of logging habit (low signal vs the rest of Pulse).
-                  </p>
+                  <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Extra: ~8 weeks of how much you logged.</p>
                 </div>
                 <span className="shrink-0 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] group-open:hidden">
                   Show

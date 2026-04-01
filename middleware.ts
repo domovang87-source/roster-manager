@@ -7,6 +7,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/stripe-webhook).*)",
+    // Exclude Stripe + Bearer-token webhooks/cron so POSTs are not redirected to /login
+    "/((?!_next/static|_next/image|favicon.ico|api/stripe-webhook|api/incoming-message|api/approve-all|api/cron/|api/health).*)",
   ],
 };

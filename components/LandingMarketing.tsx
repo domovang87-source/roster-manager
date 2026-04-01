@@ -2,64 +2,15 @@
 
 import React from "react";
 import Link from "next/link";
-import { CircleUserRound, Wand2 } from "lucide-react";
-import { RosterTierPie, SocialEquityPanel } from "./PulseRosterCharts";
-import type { SocialEquityRow } from "../lib/portfolio-stats";
-import { COACH_CALENDLY_URL, COACH_PROGRAMS_URL } from "../lib/coach-links";
+import { CircleUserRound } from "lucide-react";
+import {
+  ASK_DOMO_CHAT_URL,
+  COACH_CALENDLY_URL,
+  COACH_PROGRAMS_URL,
+} from "@/lib/coach-links";
 
-const HERO_TAGLINES = [
-  "Your circle, curated.",
-  "Don\u2019t mess up the follow-up.",
-  "Know what to say next.",
-] as const;
-
-/** Illustrative tier split — matches the A/B/C counts shown in copy (12 total). */
-const DEMO_TIER_COUNTS = { A: 3, B: 4, C: 5 } as const;
-
-const DEMO_SOCIAL_EQUITY: SocialEquityRow[] = [
-  {
-    id: "demo-raven",
-    name: "Raven",
-    tier: "C",
-    inbound: 3,
-    outbound: 17,
-    outboundPct: 85,
-    styleLabel: "The Investor",
-    energyLeak: true,
-  },
-  {
-    id: "demo-aubrey",
-    name: "Aubrey",
-    tier: "A",
-    inbound: 7,
-    outbound: 7,
-    outboundPct: 50,
-    styleLabel: "The Volley",
-    energyLeak: false,
-  },
-];
-
-const VOLUME_CHART_MOCK = [
-  { pct: 50, label: "Feb 3" },
-  { pct: 74, label: "Feb 10" },
-  { pct: 68, label: "Feb 17" },
-  { pct: 100, label: "Feb 24" },
-  { pct: 79, label: "Mar 3" },
-  { pct: 88, label: "Mar 10" },
-  { pct: 64, label: "Mar 17" },
-  { pct: 97, label: "Mar 24" },
-] as const;
-
-/** Single-scroll marketing teaser: same hero as login, Pulse + draft mocks, CTA to sign up. */
+/** Simplified marketing page — fewer sections and terms for first-time visitors. */
 export default function LandingMarketing() {
-  const [tagIdx, setTagIdx] = React.useState(0);
-  React.useEffect(() => {
-    const id = window.setInterval(() => {
-      setTagIdx((i) => (i + 1) % HERO_TAGLINES.length);
-    }, 8000);
-    return () => window.clearInterval(id);
-  }, []);
-
   return (
     <div className="min-h-screen bg-[var(--rm-bg)] text-[var(--rm-text)]">
       <div className="sticky top-0 z-20 border-b border-[color:var(--rm-border)]/70 bg-[var(--rm-bg)]/92 backdrop-blur-md">
@@ -74,16 +25,17 @@ export default function LandingMarketing() {
           </Link>
         </div>
       </div>
-      <header className="mx-auto max-w-3xl px-6 pb-16 pt-10 text-center sm:pt-16">
+
+      <header className="mx-auto max-w-lg px-6 pb-14 pt-12 text-center sm:pt-16">
         <h1 className="text-5xl font-light tracking-[0.5em] sm:text-6xl">STACK</h1>
-        <p key={tagIdx} className="mt-5 font-light italic tracking-[0.15em] text-[var(--rm-text-muted)]">
-          {HERO_TAGLINES[tagIdx]}
+        <p className="mt-5 font-light italic tracking-[0.12em] text-[var(--rm-text-muted)]">
+          Your circle, curated.
         </p>
-        <p className="mx-auto mt-8 max-w-md text-sm leading-relaxed text-[var(--rm-text-muted)]">
-          The AI-powered CRM for your social life. Track Charisma Scores, draft the perfect reply, and never let an
-          important thread slip through the cracks again.
+        <p className="mx-auto mt-8 text-base leading-relaxed text-[var(--rm-text-muted)]">
+          Keep the people you care about in one place. Log your texts, see who needs a nudge, and get help replying when
+          you freeze — without a spreadsheet or a second brain.
         </p>
-        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
             href="/login?mode=signup"
             className="inline-flex w-full max-w-xs items-center justify-center rounded-full bg-[var(--rm-accent)] px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.28em] text-white shadow-[0_0_24px_rgba(184,62,125,0.25)] transition hover:brightness-110 sm:w-auto"
@@ -92,209 +44,98 @@ export default function LandingMarketing() {
           </Link>
           <Link
             href="/login"
-            className="text-[12px] font-medium tracking-[0.08em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
+            className="text-[12px] font-medium tracking-[0.06em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
           >
             Already have an account? Sign in
           </Link>
         </div>
       </header>
 
-      <section className="mx-auto max-w-3xl px-6 pb-20" aria-labelledby="pulse-preview-heading">
-        <p
-          id="pulse-preview-heading"
-          className="text-center text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)]"
-        >
-          Pulse · command center
-        </p>
-        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[var(--rm-text-muted)]">
-          Active Charisma across the roster, who&apos;s waiting on you, <strong className="font-medium text-[var(--rm-text)]">roster by tier</strong>, and{" "}
-          <strong className="font-medium text-[var(--rm-text)]">social equity</strong> (them vs you in the log) — the same layout as the real Pulse tab.
-        </p>
-        <div className="mt-8 overflow-hidden rounded-sm border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] shadow-[0_0_0_1px_rgba(184,62,125,0.06)]">
-          <div className="border-b border-[color:var(--rm-border)] px-4 py-3">
-            <p className="text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">Pulse</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--rm-text)]">Command center — portfolio vs thread balance</p>
-          </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
-            <div className="border border-[color:var(--rm-accent-muted)]/35 bg-[var(--rm-accent)]/[0.07] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-accent)]">Active Charisma · roster</p>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--rm-text)]">
-                72<span className="ml-1 text-base font-normal text-[var(--rm-text-muted)]">/100</span>
-              </p>
-              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Average health of logged threads</p>
-            </div>
-            <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Needs your reply</p>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-amber-400/95">1</p>
-              <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">A-list · they texted last · close the loop</p>
-            </div>
-            <div className="border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3 sm:col-span-2">
-              <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Truth mirror · same charts as Home / Pulse</p>
-              <p className="mt-1 text-[10px] leading-snug text-[var(--rm-text-muted)]">
-                <strong className="font-medium text-[var(--rm-text)]">Portfolio</strong> (who you ranked) vs{" "}
-                <strong className="font-medium text-[var(--rm-text)]">thread balance</strong> (what you logged). Sample data
-                only.
-              </p>
-              <div className="mt-4 grid gap-8 sm:grid-cols-2 sm:items-start sm:gap-6">
-                <div className="min-w-0">
-                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Roster by tier</p>
-                  <div className="mt-3 flex justify-center sm:justify-start">
-                    <RosterTierPie tierCounts={{ ...DEMO_TIER_COUNTS }} />
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]">Social equity</p>
-                  <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">Highest-volume threads · green = them, orange = you</p>
-                  <SocialEquityPanel rows={DEMO_SOCIAL_EQUITY} />
-                </div>
-              </div>
-            </div>
-          </div>
-          <details className="group border-t border-[color:var(--rm-border)] px-4 py-3">
-            <summary className="cursor-pointer list-none text-[11px] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)] [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center justify-between gap-2">
-                <span>Optional: raw weekly message counts (illustrative)</span>
-                <span className="text-[9px] uppercase tracking-wider text-[var(--rm-text-muted)]/70 group-open:hidden">Show</span>
-              </span>
-            </summary>
-            <p className="mt-2 text-[10px] leading-snug text-[var(--rm-text-muted)]">
-              Total texts logged per week is reference noise for most people — the scoreboard above is what you optimize.
-            </p>
-            <div className="mt-4">
-              <div className="flex h-28 gap-1 rounded-b-sm bg-[var(--rm-bg)]/90 sm:h-32 sm:gap-2">
-                {VOLUME_CHART_MOCK.map(({ pct }, i) => (
-                  <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col justify-end">
-                    <div
-                      className="mx-auto w-full max-w-[2.5rem] rounded-t-sm bg-gradient-to-t from-[var(--rm-accent-deep)] to-[var(--rm-accent)] shadow-[0_-1px_12px_rgba(184,62,125,0.2)]"
-                      style={{ height: `${Math.max(12, pct)}%`, minHeight: "0.75rem" }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 flex gap-1 sm:gap-2">
-                {VOLUME_CHART_MOCK.map(({ label }, i) => (
-                  <div key={`lbl-${i}`} className="min-w-0 flex-1">
-                    <span className="block whitespace-nowrap text-center font-mono text-[8px] text-[var(--rm-text-muted)] sm:text-[9px]">
-                      {label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </details>
-        </div>
+      <section className="mx-auto max-w-lg px-6 pb-16" aria-labelledby="how-heading">
+        <h2 id="how-heading" className="text-center text-xs font-medium uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
+          How it works
+        </h2>
+        <ol className="mt-8 space-y-5 text-left text-sm leading-relaxed text-[var(--rm-text-muted)]">
+          <li className="flex gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--rm-border)] text-[11px] font-semibold text-[var(--rm-text)]">
+              1
+            </span>
+            <span>
+              <strong className="font-medium text-[var(--rm-text)]">Add people</strong> to your roster and note how
+              close they are — inner circle, in the mix, or check-ins.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--rm-border)] text-[11px] font-semibold text-[var(--rm-text)]">
+              2
+            </span>
+            <span>
+              <strong className="font-medium text-[var(--rm-text)]">Log messages</strong> so Stack can show who&apos;s
+              quiet, who&apos;s carrying the chat, and what&apos;s still open.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--rm-border)] text-[11px] font-semibold text-[var(--rm-text)]">
+              3
+            </span>
+            <span>
+              <strong className="font-medium text-[var(--rm-text)]">Draft replies</strong> in your voice when you stall.
+              Upgrade for unlimited logging, coaching-style help in the app, and deeper reads.
+            </span>
+          </li>
+        </ol>
       </section>
 
-      <section className="mx-auto max-w-3xl px-6 pb-20" aria-labelledby="active-charisma-read-heading">
-        <p
-          id="active-charisma-read-heading"
-          className="text-center text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)]"
-        >
-          Home · thread read
+      <section className="mx-auto max-w-lg px-6 pb-20" aria-labelledby="sample-heading">
+        <h2 id="sample-heading" className="text-center text-xs font-medium uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
+          Example
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-center text-sm text-[var(--rm-text-muted)]">
+          They text you — Stack suggests a reply based on what you logged (sample below).
         </p>
-        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[var(--rm-text-muted)]">
-          Filter the noise — tap the Charisma Score on any card. Stack reads the vibe and momentum of the thread in plain
-          language.
-        </p>
-        <div className="mt-8 overflow-hidden rounded-sm border border-[color:var(--rm-border)] bg-[var(--rm-bg)] shadow-[inset_0_1px_0_rgba(184,62,125,0.05)]">
-          <div className="border-b border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-2">
-            <p className="text-[9px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">Sample screenshot · not your data</p>
+        <div className="mt-8 overflow-hidden rounded-sm border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
+          <div className="border-b border-[color:var(--rm-border)]/80 pb-3">
+            <p className="text-sm font-semibold text-[var(--rm-text)]">Raven</p>
+            <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Someone on your roster</p>
           </div>
-          <div className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color:var(--rm-border)]/80 pb-3">
-              <div>
-                <p className="text-sm font-semibold text-[var(--rm-text)]">Aubrey</p>
-                <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">A-Tier · inner circle</p>
-              </div>
-              <div className="flex max-w-[10.5rem] items-center gap-1.5 rounded-full border border-[color:var(--rm-accent-muted)]/45 bg-[var(--rm-bg-elevated)] px-2 py-1 text-left ring-1 ring-[var(--rm-accent)]/15">
-                <Wand2 size={12} strokeWidth={1.5} className="shrink-0 text-[var(--rm-accent)]" aria-hidden />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-[12px] font-semibold tabular-nums leading-none text-[var(--rm-text)]">76</span>
-                  <span className="line-clamp-2 text-[8px] font-medium leading-snug text-[var(--rm-text-muted)]">
-                    They texted last · tap
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div
-              className="mt-3 border border-[color:var(--rm-accent-muted)]/35 bg-[var(--rm-bg-elevated)] p-3 text-left shadow-lg"
-              role="img"
-              aria-label="Example Charisma Score explanation popover"
-            >
-              <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[var(--rm-accent)]">
-                Charisma Score · 76/100 · A-Tier
-              </p>
-              <div className="mt-2 space-y-2.5 text-[11px] leading-snug text-[var(--rm-text-muted)]">
-                <p className="text-[var(--rm-text)]">
-                  <span className="font-medium text-[var(--rm-text)]">76/100</span> — they texted last about 18 hours ago.
-                </p>
-                <p>
-                  You&apos;re nearing the ~24-hour check-in pace you set — reply when you mean it, not when you panic.
-                </p>
-                <p className="text-[var(--rm-text)]">
-                  <span className="font-semibold text-[var(--rm-accent)]">Next step:</span> Send one text that answers
-                  what they sent and moves the thread forward (time, place, or a clear ask). Do it before you blow past
-                  your own pace. After you send, log it under <span className="text-[var(--rm-text-muted)]">Texts</span>{" "}
-                  so your read stays accurate.
-                </p>
-              </div>
-            </div>
-            <p className="mt-3 text-[10px] text-[var(--rm-text-muted)]">
-              In the app, tap the score — same clarity on your real threads, not a demo fantasy.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-3xl px-6 pb-24" aria-labelledby="draft-preview-heading">
-        <p
-          id="draft-preview-heading"
-          className="text-center text-[10px] uppercase tracking-[0.4em] text-[var(--rm-text-muted)]"
-        >
-          Home · A-tier draft
-        </p>
-        <p className="mx-auto mt-2 max-w-lg text-center text-sm text-[var(--rm-text-muted)]">
-          They texted — you freeze on what to say. Stack pulls from your log and the voice you set per person, so you get
-          something you can send, not a blank screen.
-        </p>
-        <div className="mt-8 border border-[color:var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[color:var(--rm-border)]/80 pb-3">
-            <div>
-              <p className="text-sm font-semibold text-[var(--rm-text)]">Raven</p>
-              <p className="mt-0.5 text-[9px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">A-Tier</p>
-            </div>
-            <div className="flex items-center gap-2 rounded-full border border-amber-500/45 px-2 py-1 text-amber-100/95">
-              <span className="text-[11px] font-semibold tabular-nums">78</span>
-              <span className="max-w-[5.5rem] text-[7px] font-medium leading-tight text-[var(--rm-text-muted)]">
-                Looks steady · tap
-              </span>
-            </div>
-          </div>
-          <p className="mt-3 text-[11px] leading-snug text-[var(--rm-text-muted)]">
+          <p className="mt-4 text-sm leading-relaxed text-[var(--rm-text-muted)]">
             &ldquo;Haha okay - let&apos;s do Thursday.&rdquo;
           </p>
           <div className="mt-4 border border-[color:var(--rm-border)] bg-[var(--rm-bg)] p-3">
-            <p className="text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Suggested reply</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Suggested reply</p>
             <p className="mt-2 text-sm leading-relaxed text-[var(--rm-text)]">
               Let&apos;s do Sushi at 7; I&apos;ll grab us a spot and text you the place.
             </p>
           </div>
-          <p className="mt-3 text-[10px] text-[var(--rm-text-muted)]">
-            Sample only — your drafts are built from what you actually logged, not generic lines.
-          </p>
+          <p className="mt-3 text-[10px] text-[var(--rm-text-muted)]">Illustration only — your app uses your real log.</p>
         </div>
       </section>
 
-      <footer className="mx-auto max-w-3xl px-6 pb-16 text-center">
+      <section className="mx-auto max-w-lg px-6 pb-20 text-center">
+        <p className="text-xs leading-relaxed text-[var(--rm-text-muted)]">
+          <strong className="font-medium text-[var(--rm-text)]">Stack Pro</strong> adds in-app coaching (same ideas as
+          your drafts) and more room to grow. Prefer the open site? Try{" "}
+          <a
+            href={ASK_DOMO_CHAT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--rm-accent-muted)] underline decoration-[var(--rm-border)] underline-offset-2 transition hover:text-[var(--rm-text)]"
+          >
+            Ask Domo
+          </a>
+          .
+        </p>
+      </section>
+
+      <footer className="mx-auto max-w-lg px-6 pb-16 text-center">
         <Link
           href="/login?mode=signup"
           className="inline-flex w-full max-w-sm items-center justify-center rounded-full border border-[color:var(--rm-accent)] bg-transparent px-8 py-3.5 text-xs font-semibold uppercase tracking-[0.28em] text-[var(--rm-text)] transition hover:bg-[var(--rm-accent)] hover:text-white sm:w-auto"
         >
           Get Stack free
         </Link>
-        <p className="mt-6 max-w-sm mx-auto text-[11px] leading-relaxed text-[var(--rm-text-muted)]">
-          Free to start · roster + Texts log + one AI draft. Curate your circle, manage the chaos, upgrade when it&apos;s
-          earning its keep.
+        <p className="mx-auto mt-6 max-w-sm text-[11px] leading-relaxed text-[var(--rm-text-muted)]">
+          Free: one person on your roster, message log, and one AI draft. Upgrade when you want the full mirror.
         </p>
         <p className="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[10px] text-[var(--rm-text-muted)]">
           <a
@@ -316,6 +157,15 @@ export default function LandingMarketing() {
           >
             Book a 1:1 session
           </a>
+          <span className="text-[var(--rm-text-muted)]/40" aria-hidden>
+            ·
+          </span>
+          <Link
+            href="/privacy"
+            className="underline decoration-[var(--rm-border)] underline-offset-2 transition hover:text-[var(--rm-text)]"
+          >
+            Privacy
+          </Link>
         </p>
       </footer>
     </div>

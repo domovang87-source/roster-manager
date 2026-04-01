@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkRateLimit, getRequestIp, RATE } from "@/lib/security/rate-limit";
 
 /**
  * Anonymous aggregate stats after a successful screenshot import (no bodies, no images, no names).
@@ -7,6 +8,15 @@ import { NextResponse } from "next/server";
 export async function POST(req: Request) {
   if (process.env.ENABLE_SCREENSHOT_METRICS !== "1") {
     return new NextResponse(null, { status: 204 });
+  }
+
+  const ip = getRequestIp(req);
+  const rl = checkRateLimit(`metrics-screenshot:${ip}`, RATE.metrics.max, RATE.metrics.windowMs);
+  if (!rl.ok) {
+    return new NextResponse(null, {
+      status: 429,
+      headers: { "Retry-After": String(rl.retryAfterSec) },
+    });
   }
 
   try {

@@ -101,14 +101,15 @@ export type SocialEquityRow = {
   outbound: number;
   /** Share of logged thread rows that are outbound, 0–100 */
   outboundPct: number;
+  /** Their-side read from logged line mix — not a personality label. */
   styleLabel: string;
   /** C-tier with more 7d touches than your busiest A (requires ≥1 A on roster) */
   energyLeak: boolean;
 };
 
 /**
- * Thread style for Social Equity — only four buckets (plus the info modal lists the same four).
- * Based on inbound vs outbound text lines you logged, not their personality.
+ * Social Equity tag: how **they** show up in what you logged (inbound vs outbound lines).
+ * Sparse on their side → thin returns; heavy on their side → they’re driving the visible thread.
  */
 export function communicationStyleFromContext(
   ctx: MomentumContext | undefined,
@@ -122,8 +123,8 @@ export function communicationStyleFromContext(
   if (lines < 4) return "No read";
 
   const outShare = ob / lines;
-  if (outShare >= 0.58) return "The Investor";
-  if (outShare <= 0.42) return "The Magnet";
+  if (outShare >= 0.58) return "The Minimum";
+  if (outShare <= 0.42) return "The Driver";
   return "The Volley";
 }
 

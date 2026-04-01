@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { RATE } from "@/lib/security/rate-limit";
+import { rateLimitExceeded } from "@/lib/security/rate-limit-response";
+import { LIMITS } from "@/lib/security/input-limits";
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
@@ -47,10 +50,31 @@ export async function POST(req: Request) {
     );
   }
 
-  const { session_id } = (await req.json()) as { session_id?: string };
+  const limited = rateLimitExceeded(
+    req,
+    user.id,
+    "verify-checkout",
+    RATE.verifyCheckout.max,
+    RATE.verifyCheckout.windowMs
+  );
+  if (limited) return limited;
+
+  let body: { session_id?: string };
+  try {
+    body = (await req.json()) as { session_id?: string };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON.", pro: false }, { status: 400 });
+  }
+
+  const session_id =
+    typeof body.session_id === "string" ? body.session_id.trim().slice(0, LIMITS.checkoutSessionId) : "";
 
   if (!session_id) {
     return NextResponse.json({ error: "Missing session_id.", pro: false }, { status: 400 });
+  }
+
+  if (!/^cs_[a-zA-Z0-9_]+$/.test(session_id)) {
+    return NextResponse.json({ error: "Invalid session_id.", pro: false }, { status: 400 });
   }
 
   try {

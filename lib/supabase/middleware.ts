@@ -35,6 +35,7 @@ export async function updateSession(request: NextRequest) {
     pathname === "/" ||
     pathname === "/welcome" ||
     pathname === "/login" ||
+    pathname === "/privacy" ||
     pathname.startsWith("/auth/");
 
   if (!user && !isPublic) {

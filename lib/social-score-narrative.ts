@@ -1,9 +1,9 @@
 import type { PortfolioProspect } from "./portfolio-stats";
 import { isAtGhostingRisk } from "./portfolio-stats";
 
-/** Shown when user expands Active Charisma help on Pulse — plain talk, not a manual. */
+/** Shown when user expands Active Charisma on Pulse — keep short; line below is the real take. */
 export const SOCIAL_SCORE_EXPLAINER =
-  "Active Charisma (0–100) is blunt: do your real texts match how you ranked people (A/B/C), the check-in pace you picked in Rhythm, and what you actually log? It’s not a moral grade — it’s whether your behavior matches your own rules.";
+  "0–100: does the ledger match who you said matters (A/B/C) and the rhythm you chose? Not a grade — a power read on your own data.";
 
 function firstName(full: string): string {
   return (full.split(/\s+/)[0] || full).replace(/,$/, "");
@@ -40,17 +40,17 @@ export function buildSocialScoreSynopsis(
   const x = Math.round(avg * 10) / 10;
 
   if (prospects.length === 0) {
-    return `Score’s ${x}/100 on paper — add people under People when you’re ready to mean it.`;
+    return `${x}/100 — add People when you’re serious.`;
   }
 
   if (activityCount === 0) {
-    return `Score’s ${x}/100 but you haven’t logged a thread yet. Screenshot or quick log — otherwise we’re guessing.`;
+    return `${x}/100 — log Texts or we’re guessing.`;
   }
 
   const aListGhost = prospects.filter((p) => p.tier === "A" && isAtGhostingRisk(p, now));
   if (aListGhost.length > 0) {
     const n = firstName(aListGhost[0].name);
-    return `${x}/100 partly because ${n} is A-list, they texted last, and you’ve got nothing logged back. Either reply or log what you already sent — you said they were top tier.`;
+    return `${x}/100 — ${n} is A-tier, they texted last, you’ve got no reply logged. Fix it or log what you sent elsewhere.`;
   }
 
   const behind = prospects
@@ -64,16 +64,16 @@ export function buildSocialScoreSynopsis(
     const p0 = behind[0];
     const n = firstName(p0.name);
     const goal = p0.momentumContext?.remindAfterDays ?? 7;
-    return `${x}/100 because you told Rhythm ~every ${goal} day${goal === 1 ? "" : "s"} for that tier, and ${n} (and maybe others) doesn’t match what you logged. Touch base or log what you did.`;
+    return `${x}/100 — you set ~${goal}d check-ins; ${n} (and maybe more) doesn’t match the log. Ping or log it.`;
   }
 
   if (avg < 45) {
-    return `${x}/100 — a bunch of threads look dusty vs how you ranked people. Small replies + honest logging are the fastest fix.`;
+    return `${x}/100 — cold threads vs who you ranked up. Reply or log what you already sent off-app.`;
   }
 
   if (avg >= 68) {
-    return `${x}/100 — you’re mostly walking the walk for how you sorted your roster. Keep Texts honest so it stays true.`;
+    return `${x}/100 — allocation mostly matches intent. Keep the log honest.`;
   }
 
-  return `${x}/100 — mixed bag. Some chats match your priorities; others need a nudge. Put energy where you ranked it.`;
+  return `${x}/100 — mixed picture. Tilt effort toward A before you feed C.`;
 }

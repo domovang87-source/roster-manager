@@ -123,7 +123,7 @@ function RosterPageInner() {
       const sum = ib + ob;
       const yourPct = sum > 0 ? Math.round((ob / sum) * 100) : 0;
       const who = (selectedProspect.name || "They").split(/\s+/)[0] || "They";
-      return `You marked ${who} as C-tier, but ${yourPct}% of what you logged here is you talking. That’s a lot of effort for someone in the casual column — let them come to you.`;
+      return `You marked ${who} as C-tier, but ${yourPct}% of what you logged here is your texts / engagement. That’s a lot for the casual column — let them come to you.`;
     }
     return null;
   }, [selectedProspect, prospectMessages]);

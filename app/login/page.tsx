@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { createBrowserSupabase } from "../../lib/supabase/browser";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -458,6 +459,12 @@ export default function LoginPage() {
             </button>
           )}
         </div>
+
+        <p className="mt-8 text-center text-[10px] text-[#5c6370]">
+          <Link href="/privacy" className="underline decoration-[#3a3f48] underline-offset-2 transition hover:text-[#8b929e]">
+            Privacy
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
+import { RATE } from "@/lib/security/rate-limit";
+import { rateLimitExceeded } from "@/lib/security/rate-limit-response";
 
 const cookieOpts = {
   path: "/",
@@ -16,7 +18,7 @@ const clearCookieOpts = {
   secure: process.env.NODE_ENV === "production",
 };
 
-export async function GET(_req: Request) {
+export async function GET(req: Request) {
   let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
   try {
     supabase = await createServerSupabase();
@@ -28,6 +30,15 @@ export async function GET(_req: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const limited = rateLimitExceeded(
+    req,
+    user?.id ?? null,
+    "check-subscription",
+    RATE.checkSubscription.max,
+    RATE.checkSubscription.windowMs
+  );
+  if (limited) return limited;
 
   if (!user) {
     // Not logged in — clear any stale Pro cookie

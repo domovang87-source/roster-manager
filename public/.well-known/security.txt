@@ -1,0 +1,4 @@
+# Stack — replace Contact and Canonical with your real support / security channel before launch.
+Contact: mailto:support@yourdomain.com
+Preferred-Languages: en
+Canonical: https://yourdomain.com/.well-known/security.txt

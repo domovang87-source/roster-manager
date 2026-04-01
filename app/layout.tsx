@@ -12,9 +12,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+function metadataBaseUrl(): URL | undefined {
+  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    return new URL(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+const metadataBase = metadataBaseUrl();
+
 export const metadata: Metadata = {
   title: "STACK",
   description: "STACK — your roster, prioritized.",
+  ...(metadataBase ? { metadataBase } : {}),
 };
 
 export const viewport: Viewport = {

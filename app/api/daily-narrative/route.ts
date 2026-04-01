@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { computeEnergyLeakFlag } from "@/lib/portfolio-stats";
+import { RATE } from "@/lib/security/rate-limit";
+import { rateLimitExceeded } from "@/lib/security/rate-limit-response";
 
 type Tier = "A" | "B" | "C";
 
@@ -19,13 +21,23 @@ function isBriefingSnoozed(
   return new Date(lastInboundIso).getTime() <= clearedMs;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const supabase = await createServerSupabase();
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
+    const limited = rateLimitExceeded(
+      req,
+      user?.id ?? null,
+      "daily-narrative",
+      user ? RATE.dailyNarrative.max : 60,
+      RATE.dailyNarrative.windowMs
+    );
+    if (limited) return limited;
+
     if (!user) {
       return NextResponse.json({ synopsis: allClear, tacticalNotes: [] as string[] });
     }
@@ -126,7 +138,7 @@ export async function GET() {
       if (computeEnergyLeakFlag(tier, c7, maxA7d, hasATier)) {
         const who = String(p.name ?? "Them").split(/\s+/)[0] || "Them";
         tacticalNotes.push(
-          `Energy leak: ${who} is supposed to be casual (C-tier), but they’ve logged more touches in the last 7 days than your busiest A-list person. Your focus is sneaking the wrong direction.`
+          `Energy leak: ${who} is supposed to be casual (C-tier), but they’ve logged more texts / engagement in the last 7 days than your busiest A-list person. Your focus is sneaking the wrong direction.`
         );
       }
       if (tier === "C") {
@@ -136,7 +148,7 @@ export async function GET() {
           const sum = st.ib + st.ob;
           const yourPct = sum > 0 ? Math.round((st.ob / sum) * 100) : 0;
           tacticalNotes.push(
-            `Didn’t you say ${who} was C-tier? In your log with them, ${yourPct}% of the lines are yours. That’s you carrying a “low priority” label — back off and let them earn the next move.`
+            `Didn’t you say ${who} was C-tier? ${yourPct}% of what you logged with them is your texts / engagement. That’s you carrying “low priority” — back off and let them earn the next move.`
           );
         }
       }

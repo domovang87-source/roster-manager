@@ -12,11 +12,12 @@ type Props = {
 };
 
 const PRO_PERKS = [
-  "Unlimited text logs + screenshots (no 5-message cap)",
-  "Unlimited AI reply drafts in your voice",
+  "Don’t let A-list threads go cold — unlimited logs + screenshots (no 5-row cap)",
+  "Ask Domo–style coaching in-app on Home — diagnosis, move, copy-paste text + warm/cold branches (same playbook RAG as drafts)",
+  "See attention leaks vs tier (Pulse + social equity) without spreadsheet cosplay",
+  "Unlimited AI drafts when you freeze mid-reply — your voice, their last move in context",
   "Up to 5 regenerations per draft (standard tier voice)",
-  "Daily AI brief + full portfolio read",
-  "Unlimited roster · save Logic Lab cadence & voice per tier",
+  "Daily brief + full roster read · unlimited people · Logic Lab cadence per tier",
 ];
 
 const PRO_HERO = PRO_PERKS.slice(0, 3);
@@ -81,10 +82,14 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
 
   const proPrice = plan === "yearly" ? "$250 / year" : "$29 / mo";
   const proSub =
-    plan === "yearly" ? "$20.83 / mo effective · billed once a year" : "Cancel anytime · no long contract";
+    plan === "yearly"
+      ? "$20.83 / mo effective · one annual charge"
+      : "Billed monthly";
   const elitePrice = plan === "yearly" ? "$999 / year" : "$99 / mo";
   const eliteSub =
-    plan === "yearly" ? "$83.25 / mo effective · billed annually" : "Cancel anytime";
+    plan === "yearly"
+      ? "$83.25 / mo effective · one annual charge"
+      : "Billed monthly";
 
   const continueProLabel =
     plan === "yearly" ? "Continue — $250/yr" : "Continue — $29/mo";
@@ -157,7 +162,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           </details>
 
           <p className="mt-4 text-[10px] leading-snug text-[var(--rm-text-muted)]">
-            Cancel anytime · Charged securely by Stripe · You can use Apple Pay or saved cards on the next screen
+            Charged securely by Stripe · Apple Pay, Link, and cards on the next screen
           </p>
 
           <button
@@ -168,6 +173,10 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           >
             {loading === "pro" ? "Opening checkout…" : continueProLabel}
           </button>
+
+          <p className="mt-2.5 text-center text-[11px] leading-snug text-[var(--rm-text-muted)]">
+            Cancel anytime — no long contract. Manage billing from Logic Lab when you&apos;re signed in.
+          </p>
 
           <p className="mt-3 text-center text-[10px] text-[var(--rm-text-muted)]">
             <button
@@ -210,6 +219,10 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           >
             {loading === "elite" ? "Opening checkout…" : continueEliteLabel}
           </button>
+
+          <p className="mt-2.5 text-center text-[10px] leading-snug text-[var(--rm-text-muted)]">
+            Cancel anytime — same billing controls as Pro (Logic Lab → manage subscription).
+          </p>
         </details>
 
         {error ? <p className="mt-4 text-center text-xs text-rose-400">{error}</p> : null}

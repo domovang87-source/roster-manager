@@ -1,33 +1,49 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/admin";
+import { getBearerToken, timingSafeEqualUtf8 } from "@/lib/security/timing-safe";
+import { checkRateLimit, getRequestIp, RATE } from "@/lib/security/rate-limit";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-const getSupabaseServerClient = () => {
-  if (!supabaseUrl || !supabaseAnonKey) return null;
-  return createClient(supabaseUrl, supabaseAnonKey);
-};
-
-export async function POST() {
-  const client = getSupabaseServerClient();
-  if (!client) {
+/**
+ * Internal / automation only. Mass-updates scheduled replies — was previously callable with no auth.
+ * Set CRON_SECRET and send: Authorization: Bearer <CRON_SECRET>
+ */
+export async function POST(req: Request) {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) {
     return NextResponse.json(
-      { error: "Supabase is not configured." },
-      { status: 400 }
+      { error: "CRON_SECRET is not configured — bulk approve is disabled." },
+      { status: 503 }
     );
   }
 
-  const { error } = await client
+  const token = getBearerToken(req);
+  if (!timingSafeEqualUtf8(secret, token)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const ip = getRequestIp(req);
+  const rl = checkRateLimit(`approve-all:${ip}`, RATE.webhook.max, RATE.webhook.windowMs);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } }
+    );
+  }
+
+  let supabase;
+  try {
+    supabase = getSupabaseServiceRoleClient();
+  } catch {
+    return NextResponse.json({ error: "Server not configured." }, { status: 500 });
+  }
+
+  const { error } = await supabase
     .from("scheduled_replies")
     .update({ status: "sent" })
     .eq("status", "scheduled");
 
   if (error) {
-    return NextResponse.json(
-      { error: "Failed to approve scheduled replies." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to approve scheduled replies." }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

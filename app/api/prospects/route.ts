@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { FREE_ROSTER_SLOTS } from "@/lib/free-tier";
 import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
+import { LIMITS, clampStr } from "@/lib/security/input-limits";
 
 type Tier = "A" | "B" | "C";
 
@@ -28,17 +29,18 @@ export async function POST(req: Request) {
     phone_number?: string | null;
   };
 
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const name = clampStr(typeof body.name === "string" ? body.name.trim() : "", LIMITS.prospectName);
   if (!name) {
     return NextResponse.json({ error: "Name is required." }, { status: 400 });
   }
 
   const tier: Tier =
     body.tier === "A" || body.tier === "B" || body.tier === "C" ? body.tier : "B";
-  const phone =
-    typeof body.phone_number === "string" && body.phone_number.trim()
-      ? body.phone_number.trim()
-      : null;
+  let phone: string | null = null;
+  if (typeof body.phone_number === "string" && body.phone_number.trim()) {
+    const p = clampStr(body.phone_number.trim(), LIMITS.prospectPhone);
+    phone = p.length ? p : null;
+  }
 
   const { pro: isPro } = await resolvePaidAccessForUser(supabase, user.id);
 

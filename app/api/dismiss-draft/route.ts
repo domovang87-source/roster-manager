@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "../../../lib/supabase/server";
+import { isUuid } from "@/lib/security/uuid";
 
 type Body = { draft_id?: string };
 
 export async function POST(req: Request) {
-  const { draft_id } = (await req.json()) as Body;
-  if (!draft_id) {
-    return NextResponse.json({ error: "Missing draft_id." }, { status: 400 });
+  let body: Body;
+  try {
+    body = (await req.json()) as Body;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+  const draft_id = typeof body.draft_id === "string" ? body.draft_id.trim() : "";
+  if (!draft_id || !isUuid(draft_id)) {
+    return NextResponse.json({ error: "Missing or invalid draft_id." }, { status: 400 });
   }
 
   const supabase = await createServerSupabase();

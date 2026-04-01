@@ -1,0 +1,12 @@
+# Stack — discourage indexing of authenticated app surfaces (marketing stays crawlable).
+User-agent: *
+Allow: /
+Disallow: /home
+Disallow: /inbox
+Disallow: /roster
+Disallow: /metrics
+Disallow: /settings
+Disallow: /logic-lab
+Disallow: /welcome
+Disallow: /auth/
+Disallow: /api/

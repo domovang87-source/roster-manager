@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { RATE } from "@/lib/security/rate-limit";
+import { rateLimitExceeded } from "@/lib/security/rate-limit-response";
+import { LIMITS, clampStr } from "@/lib/security/input-limits";
+import { isUuid } from "@/lib/security/uuid";
 import { FREE_AI_DRAFTS, FREE_ROSTER_SLOTS } from "@/lib/free-tier";
 import {
   countOwnedProspectsForUser,
@@ -101,7 +105,39 @@ async function getActivityContext(
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as RequestBody;
+  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
+  try {
+    supabase = await createServerSupabase();
+  } catch {
+    return NextResponse.json(
+      { error: "Supabase is not configured." },
+      { status: 500 }
+    );
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  const limited = rateLimitExceeded(
+    req,
+    user.id,
+    "generate-draft",
+    RATE.generateDraft.max,
+    RATE.generateDraft.windowMs
+  );
+  if (limited) return limited;
+
+  let body: RequestBody;
+  try {
+    body = (await req.json()) as RequestBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+
   const {
     tier,
     name,
@@ -120,21 +156,30 @@ export async function POST(req: Request) {
     );
   }
 
-  let supabase: Awaited<ReturnType<typeof createServerSupabase>>;
-  try {
-    supabase = await createServerSupabase();
-  } catch {
-    return NextResponse.json(
-      { error: "Supabase is not configured." },
-      { status: 500 }
-    );
+  const nameClean = clampStr(
+    typeof name === "string" ? name.trim() : "",
+    LIMITS.draftProspectName
+  );
+  if (!nameClean) {
+    return NextResponse.json({ error: "Name is required." }, { status: 400 });
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  const incomingClamped =
+    typeof incomingText === "string"
+      ? clampStr(incomingText.trim(), LIMITS.draftIncomingText)
+      : "";
+  const vibeClamped =
+    typeof vibeNotes === "string" && vibeNotes.trim()
+      ? clampStr(vibeNotes.trim(), LIMITS.draftVibeNotes)
+      : undefined;
+
+  let prospectIdClean: string | undefined;
+  if (prospectId != null && String(prospectId).trim() !== "") {
+    const pid = String(prospectId).trim();
+    if (!isUuid(pid)) {
+      return NextResponse.json({ error: "Invalid prospect." }, { status: 400 });
+    }
+    prospectIdClean = pid;
   }
 
   const paidAccess = await resolvePaidAccessForUser(supabase, user.id);
@@ -184,8 +229,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const activityLog = prospectId
-    ? await getActivityContext(supabase, prospectId)
+  const activityLog = prospectIdClean
+    ? await getActivityContext(supabase, prospectIdClean)
     : "";
 
   const { data: ruleData, error: ruleError } = await supabase
@@ -207,15 +252,17 @@ export async function POST(req: Request) {
       ? ruleData.voice_profile.trim()
       : "Confident, concise, classy.";
   const toneKey =
-    paidAccess.elite && typeof toneStyle === "string" ? toneStyle.trim().toLowerCase() : "";
+    paidAccess.elite && typeof toneStyle === "string"
+      ? clampStr(toneStyle.trim().toLowerCase(), LIMITS.toneStyle)
+      : "";
   const toneExtra =
     toneKey && TONE_STYLE_HINTS[toneKey] ? ` Tone override: ${TONE_STYLE_HINTS[toneKey]}` : "";
 
   const contextBlock = [
-    `Prospect: ${name}`,
-    vibeNotes ? `Notes: ${vibeNotes}` : null,
+    `Prospect: ${nameClean}`,
+    vibeClamped ? `Notes: ${vibeClamped}` : null,
     activityLog ? `\nRecent activity log:\n${activityLog}` : null,
-    incomingText && !youTextedLast ? `\nLatest message from them: "${incomingText}"` : null,
+    incomingClamped && !youTextedLast ? `\nLatest message from them: "${incomingClamped}"` : null,
     youTextedLast
       ? "\nThread status: The user already sent the last text in this thread. Suggest only an optional follow-up or check-in if it fits the log — not a reply as if the other person is waiting on an answer."
       : null,
@@ -224,9 +271,9 @@ export async function POST(req: Request) {
     .join("\n");
 
   const ragQuery = [
-    incomingText && !youTextedLast ? `Their last message: ${incomingText}` : "",
+    incomingClamped && !youTextedLast ? `Their last message: ${incomingClamped}` : "",
     youTextedLast ? "Thread: user texted last; optional follow-up or check-in only if appropriate." : "",
-    vibeNotes ? `Context notes: ${vibeNotes}` : "",
+    vibeClamped ? `Context notes: ${vibeClamped}` : "",
     activityLog ? `Recent activity:\n${activityLog.slice(-2500)}` : "",
   ]
     .filter(Boolean)
@@ -249,7 +296,7 @@ export async function POST(req: Request) {
     "Do not wrap the entire message in quotation marks.",
   ].join("");
 
-  const userPrompt = `${contextBlock}\n\nDraft a text to send to ${name}.`;
+  const userPrompt = `${contextBlock}\n\nDraft a text to send to ${nameClean}.`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -260,7 +307,9 @@ export async function POST(req: Request) {
       ],
     });
 
-    const draft = completion.choices[0]?.message?.content?.trim() || `Hey ${name}, been a minute. What's good?`;
+    const draft =
+      completion.choices[0]?.message?.content?.trim() ||
+      `Hey ${nameClean}, been a minute. What's good?`;
 
     return NextResponse.json({ tier, draft, suggestedReply: draft, autoReply: draft });
   } catch (err) {

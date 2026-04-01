@@ -4,6 +4,19 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { FREE_ROSTER_SLOTS } from "@/lib/free-tier";
 import { countOwnedProspectsForUser } from "@/lib/prospect-count-server";
 import { resolvePaidAccessForUser } from "@/lib/subscription-status-server";
+import { RATE } from "@/lib/security/rate-limit";
+import { rateLimitExceeded } from "@/lib/security/rate-limit-response";
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+]);
 
 const getOpenAI = () => {
   const key = process.env.OPENAI_API_KEY;
@@ -45,6 +58,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
+  const limited = rateLimitExceeded(
+    req,
+    user.id,
+    "parse-screenshot",
+    RATE.parseScreenshot.max,
+    RATE.parseScreenshot.windowMs
+  );
+  if (limited) return limited;
+
   const access = await resolvePaidAccessForUser(supabase, user.id);
   const ownedProspects = await countOwnedProspectsForUser(supabase, user.id);
   if (!access.pro && ownedProspects > FREE_ROSTER_SLOTS) {
@@ -76,9 +98,29 @@ export async function POST(req: Request) {
     );
   }
 
+  if (typeof file.size === "number" && file.size > MAX_IMAGE_BYTES) {
+    return NextResponse.json(
+      { error: "Image too large (max 8 MB)." },
+      { status: 413 }
+    );
+  }
+
+  const mimeType = (file.type || "image/png").split(";")[0]!.trim().toLowerCase();
+  if (!ALLOWED_IMAGE_TYPES.has(mimeType)) {
+    return NextResponse.json(
+      { error: "Unsupported image type. Use JPEG, PNG, WebP, GIF, or HEIC." },
+      { status: 415 }
+    );
+  }
+
   const bytes = await file.arrayBuffer();
+  if (bytes.byteLength > MAX_IMAGE_BYTES) {
+    return NextResponse.json(
+      { error: "Image too large (max 8 MB)." },
+      { status: 413 }
+    );
+  }
   const base64 = Buffer.from(bytes).toString("base64");
-  const mimeType = file.type || "image/png";
 
   try {
     const completion = await openai.chat.completions.create({
@@ -152,23 +194,14 @@ export async function POST(req: Request) {
         const arr = o.messages;
         messages = Array.isArray(arr) ? (arr as { direction: string; body: string }[]) : [];
       } else {
-        return NextResponse.json(
-          { error: "AI response was not valid JSON.", raw },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "AI response was not valid JSON." }, { status: 500 });
       }
     } catch {
-      return NextResponse.json(
-        { error: "Failed to parse AI response.", raw },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Failed to parse AI response." }, { status: 500 });
     }
 
     if (!Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "AI response missing messages array.", raw },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "AI response missing messages array." }, { status: 500 });
     }
 
     // Post-process: convert lone reaction-like entries into explicit reaction events.

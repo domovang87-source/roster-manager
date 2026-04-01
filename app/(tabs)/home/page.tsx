@@ -20,6 +20,7 @@ import {
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
+import AskDomoBridge from "../../../components/AskDomoBridge";
 import { expectOutcomeAfterNextScreenshot } from "../../../lib/draft-outcome-analytics";
 import { useProStatus } from "../../../lib/use-pro-status";
 import {
@@ -1082,7 +1083,7 @@ export default function HomePage() {
           <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
           <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
-            Roster + logged texts → AI drafts. Not a calendar or birthday book.
+            Rank people, log threads, draft under pressure — a mirror on attention, not a birthday book.
           </p>
           <p className="mt-2 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">
             Tier ·{" "}
@@ -1191,19 +1192,19 @@ export default function HomePage() {
                   <span className="text-[var(--rm-text-muted)] font-normal">(C-tier)</span>
                 </h3>
                 <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
-                  If your real log looked like this — <strong className="text-[var(--rm-text)]">~85% outbound</strong>,{" "}
-                  low inbound energy — you&apos;d be bleeding attention on a check-in tier. Stack surfaces that as{" "}
-                  <span className="text-[var(--rm-alert-bright)]">social equity</span> and{" "}
-                  <span className="text-[var(--rm-alert-bright)]">energy leaks</span> once you log texts.
+                  If your log looked like this — <strong className="text-[var(--rm-text)]">~85% your rows</strong>,{" "}
+                  their side thin — you&apos;re over-investing in someone you ranked casual. Pulse tags{" "}
+                  <span className="text-[var(--rm-alert-bright)]">their read</span> and flags{" "}
+                  <span className="text-[var(--rm-alert-bright)]">energy leaks</span> once Texts is populated.
                 </p>
                 <div className="mt-3 flex items-center gap-2">
                   <span className="rounded border border-slate-500/50 px-2 py-0.5 font-mono text-[10px] text-slate-400">
                     C
                   </span>
-                  <div className="h-2 min-w-0 flex-1 max-w-xs overflow-hidden rounded-sm bg-black/50">
+                  <div className="h-2 min-w-0 flex-1 max-w-xs overflow-hidden rounded-sm bg-black/50 ring-1 ring-violet-500/20">
                     <div className="flex h-full w-full">
-                      <div className="h-full bg-emerald-500/50" style={{ width: "15%" }} title="Them" />
-                      <div className="h-full bg-[var(--rm-alert)]/70" style={{ width: "85%" }} title="You" />
+                      <div className="h-full bg-violet-500/60" style={{ width: "15%" }} title="Their texts" />
+                      <div className="h-full bg-[var(--rm-alert)]/70" style={{ width: "85%" }} title="Your texts / engagement" />
                     </div>
                   </div>
                   <span className="font-mono text-[10px] text-[var(--rm-alert-bright)]">85% out</span>
@@ -1312,10 +1313,9 @@ export default function HomePage() {
               <h2 className="mt-1 text-base font-semibold tracking-wide text-[var(--rm-text)]">
                 The Loss Leader <span className="text-[var(--rm-text-muted)] font-normal">(Robin)</span>
               </h2>
-              <p className="mt-1 text-xs text-[var(--rm-text-muted)]">
-                C-tier · ~90% your outbound · 6d since their last real line —{" "}
-                <span className="text-amber-200/90">this is what an energy leak looks like</span> before you log truth
-                in Texts.
+              <p className="mt-1 text-[11px] text-[var(--rm-text-muted)]">
+                C-tier · ~90% your rows · <span className="text-amber-200/90">their read: thin</span> — attention leak
+                (example).
               </p>
             </div>
             <button
@@ -1335,17 +1335,15 @@ export default function HomePage() {
           </div>
           <div className="mt-4 flex items-center gap-2">
             <span className="rounded border border-slate-500/40 px-2 py-0.5 font-mono text-[10px] text-slate-400">C</span>
-            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/40">
+            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/40 ring-1 ring-violet-500/20">
               <div className="flex h-full w-full">
-                <div className="h-full bg-emerald-500/55" style={{ width: "10%" }} title="Them" />
-                <div className="h-full bg-amber-500/60" style={{ width: "90%" }} title="You" />
+                <div className="h-full bg-violet-500/60" style={{ width: "10%" }} title="Their texts" />
+                <div className="h-full bg-amber-500/60" style={{ width: "90%" }} title="Your texts / engagement" />
               </div>
             </div>
-            <span className="shrink-0 text-[9px] text-[var(--rm-text-muted)]">90% out</span>
+            <span className="shrink-0 text-[9px] text-[var(--rm-text-muted)]">90% yours</span>
           </div>
-          <p className="mt-3 text-[10px] uppercase tracking-[0.2em] text-amber-400/85">
-            Pulse → Social equity will flag this pattern on your real roster.
-          </p>
+          <p className="mt-3 text-[9px] uppercase tracking-[0.18em] text-amber-400/85">Pulse flags this on your real data.</p>
         </section>
       ) : null}
 
@@ -1353,9 +1351,8 @@ export default function HomePage() {
       {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
         <section className="border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
           <h2 className="text-base font-semibold tracking-wide">Try one AI reply (free)</h2>
-          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Below, tap <span className="text-[var(--rm-text)]">Generate Draft</span> on someone. First one is
-            free.
+          <p className="mt-1.5 text-xs text-[var(--rm-text-muted)]">
+            Tap <span className="text-[var(--rm-text)]">Generate Draft</span> — first free.
           </p>
         </section>
       ) : null}
@@ -1364,8 +1361,8 @@ export default function HomePage() {
         <div className="rounded-lg border border-amber-500/45 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="text-amber-50/95">
             {aListWaitingOnYou === 1
-              ? "Someone on your A-list texted last — you haven’t replied yet. Scroll down to them first."
-              : `${aListWaitingOnYou} people on your A-list texted last — you haven’t replied yet. Scroll down and work through them.`}
+              ? "A-list · they went last in the log and you haven&apos;t outbound-replied — that&apos;s an open power loop. Hit them first."
+              : `${aListWaitingOnYou} A-list threads · they went last, you're quiet outbound — open loops. Work top to bottom.`}
           </p>
           <Link
             href="#stack-roster-cards"
@@ -1384,7 +1381,7 @@ export default function HomePage() {
           >
             Pulse
           </Link>{" "}
-          · charts, truth mirror, social equity
+          · leverage map, truth mirror, social equity
         </p>
       ) : null}
 
@@ -1837,6 +1834,13 @@ export default function HomePage() {
           ) : null}
         </section>
       ) : null}
+
+      <AskDomoBridge
+        onRequestPro={() => {
+          setPaywallFeature("Ask Domo–style coaching (included with Pro)");
+          setShowPaywall(true);
+        }}
+      />
 
       <PaywallModal
         isOpen={showPaywall}
