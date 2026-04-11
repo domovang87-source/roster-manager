@@ -3,31 +3,14 @@
 import React from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import {
-  ImagePlus,
-  Loader2,
-  Lock,
-  LogOut,
-  MessageSquare,
-  RefreshCw,
-  Share,
-  Sparkles,
-  ThumbsUp,
-  UserPlus,
-  Wand2,
-  X,
-} from "lucide-react";
+import { LogOut, Sparkles } from "lucide-react";
 import type { PostgrestSingleResponse } from "@supabase/supabase-js";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import PaywallModal from "../../../components/PaywallModal";
 import AskDomoBridge from "../../../components/AskDomoBridge";
 import { expectOutcomeAfterNextScreenshot } from "../../../lib/draft-outcome-analytics";
 import { useProStatus } from "../../../lib/use-pro-status";
-import {
-  momentumPopoverLines,
-  momentumTeaser,
-  type MomentumContext,
-} from "../../../lib/momentum-insight";
+import type { MomentumContext } from "../../../lib/momentum-insight";
 import { DEFAULT_REMIND_DAYS_BY_TIER } from "../../../lib/momentum-check-in";
 import { clampNoteEngagementCredit, theirEngagementCreditFromNoteBody } from "../../../lib/note-engagement-signal";
 import {
@@ -48,46 +31,14 @@ import {
   freeTierLoggingAllowed,
   freeUserOverRosterLimit,
 } from "../../../lib/free-tier";
-import { tacticalNoteFromContext } from "../../../lib/pulse-tactical-audit";
+import { useToast } from "../../../components/ui/Toast";
+import PageHeader from "../../../components/ui/PageHeader";
+import DraftCard, { type EliteToneId, type DraftCardProspect } from "../../../components/home/DraftCard";
+import ScoreSheet from "../../../components/home/ScoreSheet";
+import OnboardingBanner from "../../../components/home/OnboardingBanner";
 
 const PRO_REGEN_LIMIT = 5;
 const REGEN_STORAGE_KEY = "stack_draft_regen_counts_v1";
-const ROBIN_DEMO_DISMISSED_KEY = "stack_robin_demo_dismissed_v1";
-
-const ELITE_TONES = [
-  { id: "balanced", label: "Balanced" },
-  { id: "playful", label: "Playful" },
-  { id: "dominant", label: "Dominant" },
-  { id: "warm", label: "Warm" },
-  { id: "minimal", label: "Minimal" },
-] as const;
-
-type EliteToneId = (typeof ELITE_TONES)[number]["id"];
-
-type TierProspect = {
-  id: string;
-  name: string;
-  tier: Tier;
-  phoneNumber?: string;
-  vibeNotes?: string;
-  lastInboundBody?: string;
-  /** Latest outbound text body (when you texted last, show this instead of their bubble as context). */
-  lastOutboundTextBody?: string;
-  /** Most recent log line (any type / direction), for the time badge */
-  lastActivityAt?: string;
-  draftId?: string;
-  draftText?: string;
-  /** 0–100 thread health for this person (log + screenshot uploads grow it). */
-  momentum?: number;
-  momentumContext?: MomentumContext;
-};
-
-type UndoToast = {
-  draftId: string;
-  prospectId: string;
-  tier: Tier;
-  text: string;
-};
 
 type DismissedDraft = {
   id: string;
@@ -115,182 +66,44 @@ function loadRegenMap(): Record<string, number> {
 export default function HomePage() {
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const remindByTierRef = React.useRef<Record<Tier, number>>({ ...DEFAULT_REMIND_DAYS_BY_TIER });
-  const [tierProspects, setTierProspects] = React.useState<Record<Tier, TierProspect[]>>({ A: [], B: [], C: [] });
+  const [tierProspects, setTierProspects] = React.useState<Record<Tier, DraftCardProspect[]>>({ A: [], B: [], C: [] });
   const [rosterCount, setRosterCount] = React.useState(0);
   const [activityCount, setActivityCount] = React.useState(0);
   const [draftEdits, setDraftEdits] = React.useState<Record<string, string>>({});
-  const [shareTip, setShareTip] = React.useState<{ prospectId: string; message: string } | null>(null);
-  const [robinDemoDismissed, setRobinDemoDismissed] = React.useState(false);
-  React.useEffect(() => {
-    try {
-      if (typeof window !== "undefined" && localStorage.getItem(ROBIN_DEMO_DISMISSED_KEY) === "1") {
-        setRobinDemoDismissed(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const [error, setError] = React.useState<string | null>(null);
   const [isGenerating, setIsGenerating] = React.useState<string | null>(null);
   const [showPaywall, setShowPaywall] = React.useState(false);
-  const [showCheckoutCanceledBanner, setShowCheckoutCanceledBanner] = React.useState(false);
-  const [shadowRosterNudge, setShadowRosterNudge] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(undefined);
-  const [isCheckoutLoading, setIsCheckoutLoading] = React.useState(false);
   const [draftsEverGenerated, setDraftsEverGenerated] = React.useState(0);
   const [dismissingDraftIds, setDismissingDraftIds] = React.useState<Record<string, boolean>>({});
-  const [undoToast, setUndoToast] = React.useState<UndoToast | null>(null);
   const [dismissedDrafts, setDismissedDrafts] = React.useState<DismissedDraft[]>([]);
   const [dismissedOpen, setDismissedOpen] = React.useState(false);
   const [quickTouchingId, setQuickTouchingId] = React.useState<string | null>(null);
-  const [touchBaseToast, setTouchBaseToast] = React.useState<string | null>(null);
   const [regenByDraftId, setRegenByDraftId] = React.useState<Record<string, number>>({});
   const [draftToneByProspect, setDraftToneByProspect] = React.useState<Record<string, EliteToneId>>({});
-  const [momentumPopoverId, setMomentumPopoverId] = React.useState<string | null>(null);
+  const [scoreSheetTarget, setScoreSheetTarget] = React.useState<DraftCardProspect | null>(null);
   const messagesEventTypeRef = React.useRef(true);
   const { isPro, isElite, checked, accountTier } = useProStatus();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { toast } = useToast();
 
-  React.useEffect(() => {
-    setRegenByDraftId(loadRegenMap());
-  }, []);
+  React.useEffect(() => { setRegenByDraftId(loadRegenMap()); }, []);
 
   React.useEffect(() => {
     const up = searchParams.get("upgrade");
     if (up !== "1" || !checked) return;
-    if (!isPro) {
-      setPaywallFeature("STACK Pro");
-      setShowPaywall(true);
-    }
+    if (!isPro) { setPaywallFeature("STACK Pro"); setShowPaywall(true); }
     router.replace("/home", { scroll: false });
   }, [searchParams, checked, isPro, router]);
 
   React.useEffect(() => {
     if (searchParams.get("canceled") !== "1") return;
-    setShowCheckoutCanceledBanner(true);
+    toast("Checkout paused — continue when you're ready.");
     router.replace("/home", { scroll: false });
-  }, [searchParams, router]);
+  }, [searchParams, router, toast]);
 
-  React.useEffect(() => {
-    if (typeof window === "undefined" || !checked) return;
-    if (!isPro) return;
-    try {
-      if (sessionStorage.getItem("stack_shadow_roster_nudge_v1") === "1") {
-        sessionStorage.removeItem("stack_shadow_roster_nudge_v1");
-        setShadowRosterNudge(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [checked, isPro]);
-
-  const shareDraftText = async (text: string, prospectName: string, prospectId: string) => {
-    setShareTip(null);
-    try {
-      await navigator.clipboard.writeText(text);
-      setShareTip({
-        prospectId,
-        message: "Copied — open Instagram (or any app) and paste in a DM.",
-      });
-      window.setTimeout(() => {
-        setShareTip((prev) => (prev?.prospectId === prospectId ? null : prev));
-      }, 4000);
-    } catch {
-      setError("Could not copy this draft to the clipboard.");
-      return;
-    }
-    try {
-      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        await navigator.share({
-          text,
-          title: `Draft for ${prospectName}`,
-        });
-      }
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
-    }
-  };
-
-  React.useEffect(() => {
-    if (!undoToast) return;
-    const t = setTimeout(() => setUndoToast(null), 6000);
-    return () => clearTimeout(t);
-  }, [undoToast]);
-
-  React.useEffect(() => {
-    if (!momentumPopoverId) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMomentumPopoverId(null);
-    };
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      const root = t.closest("[data-momentum-root]");
-      if (root?.getAttribute("data-momentum-root") === momentumPopoverId) return;
-      setMomentumPopoverId(null);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown);
-    };
-  }, [momentumPopoverId]);
-
-  React.useLayoutEffect(() => {
-    if (!momentumPopoverId) return;
-    const root = document.querySelector(
-      `[data-momentum-root="${CSS.escape(momentumPopoverId)}"]`
-    ) as HTMLElement | null;
-    const btn = root?.querySelector(
-      'button[type="button"][aria-haspopup="dialog"]'
-    ) as HTMLElement | null;
-    const pop = root?.querySelector("[data-momentum-popover]") as HTMLElement | null;
-    if (!root || !btn || !pop) return;
-
-    const margin = 10;
-    const maxW = 19 * 16;
-
-    const place = () => {
-      if (!pop.isConnected) return;
-      const br = btn.getBoundingClientRect();
-      const w = Math.min(maxW, window.innerWidth - 2 * margin);
-      let left = Math.max(margin, Math.min(br.left, window.innerWidth - margin - w));
-      let top = br.bottom + 6;
-      pop.style.position = "fixed";
-      pop.style.left = `${left}px`;
-      pop.style.top = `${top}px`;
-      pop.style.width = `${w}px`;
-      pop.style.zIndex = "80";
-      const h = pop.getBoundingClientRect().height;
-      if (top + h > window.innerHeight - margin) {
-        top = Math.max(margin, br.top - h - 6);
-        pop.style.top = `${top}px`;
-      }
-      pop.style.opacity = "1";
-    };
-
-    place();
-    const ro = new ResizeObserver(place);
-    ro.observe(pop);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-      if (pop.isConnected) {
-        pop.style.removeProperty("position");
-        pop.style.removeProperty("left");
-        pop.style.removeProperty("top");
-        pop.style.removeProperty("width");
-        pop.style.removeProperty("z-index");
-        pop.style.removeProperty("opacity");
-      }
-    };
-  }, [momentumPopoverId]);
-
+  // Load dismissed from localStorage
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -303,9 +116,7 @@ export default function HomePage() {
         [...prev, ...parsed].forEach((d) => map.set(d.id, d));
         return Array.from(map.values());
       });
-    } catch {
-      // ignore cache parse failure
-    }
+    } catch { /* ignore */ }
   }, []);
 
   React.useEffect(() => {
@@ -314,1476 +125,315 @@ export default function HomePage() {
     window.localStorage.setItem(LOCAL_DISMISSED_KEY, JSON.stringify(localOnly));
   }, [dismissedDrafts]);
 
-  const handleDismissCard = async (prospect: TierProspect, draftId?: string, draftText?: string) => {
+  // --- Handlers ---
+
+  const handleDismissCard = async (prospect: DraftCardProspect, draftId?: string, draftText?: string) => {
     const dismissKey = draftId || prospect.id;
     setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: true }));
-
-    // Hide from active feed immediately.
     setDismissedDrafts((prev) => [
-      {
-        id: dismissKey,
-        prospectId: prospect.id,
-        prospectName: prospect.name,
-        tier: prospect.tier,
-        text: draftText,
-        draftId,
-        dismissedAt: new Date().toISOString(),
-      },
+      { id: dismissKey, prospectId: prospect.id, prospectName: prospect.name, tier: prospect.tier, text: draftText, draftId, dismissedAt: new Date().toISOString() },
       ...prev.filter((d) => d.id !== dismissKey),
     ]);
-
-    // X = "off my stack for now" — briefing ignores them until new inbound or Restore (not "I texted them").
-    void fetch("/api/clear-prospect-briefing", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prospect_id: prospect.id }),
-    });
-
+    void fetch("/api/clear-prospect-briefing", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prospect_id: prospect.id }) });
     if (!draftId) return;
-
-    // If there is a draft, mark it dismissed server-side.
     try {
-      const res = await fetch("/api/dismiss-draft", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draft_id: draftId }),
-      });
-
-      if (!res.ok) {
-        setError("Failed to dismiss draft.");
-        setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: false }));
-        return;
-      }
-
-      setUndoToast({
-        draftId,
-        prospectId: prospect.id,
-        tier: prospect.tier,
-        text: draftText ?? "",
-      });
-    } catch {
-      setError("Failed to dismiss draft.");
-      setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: false }));
-    }
-  };
-
-  const handleUndoDismiss = async () => {
-    if (!undoToast) return;
-    const toast = undoToast;
-    setUndoToast(null);
-    try {
-      const res = await fetch("/api/undo-dismiss-draft", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draft_id: toast.draftId }),
-      });
-      if (!res.ok) {
-        setError("Failed to undo dismissal.");
-        return;
-      }
-      setTierProspects((prev) => {
-        const next = { ...prev };
-        next[toast.tier] = next[toast.tier].map((p) =>
-          p.id === toast.prospectId ? { ...p, draftId: toast.draftId, draftText: toast.text } : p
-        );
-        return next;
-      });
-      setDraftEdits((prev) => ({ ...prev, [toast.draftId]: toast.text }));
-      setDismissingDraftIds((prev) => ({ ...prev, [toast.draftId]: false }));
-      setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== toast.prospectId));
-      void fetch("/api/unclear-prospect-briefing", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prospect_id: toast.prospectId }),
-      });
-    } catch {
-      setError("Failed to undo dismissal.");
-    }
+      const res = await fetch("/api/dismiss-draft", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft_id: draftId }) });
+      if (!res.ok) { setError("Failed to dismiss draft."); setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: false })); return; }
+      toast("Card hidden — open Hidden below to restore.");
+    } catch { setError("Failed to dismiss draft."); setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: false })); }
   };
 
   const handleRestoreDismissed = async (draft: DismissedDraft) => {
     try {
       if (draft.draftId) {
-        const res = await fetch("/api/undo-dismiss-draft", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draft_id: draft.draftId }),
-        });
-        if (!res.ok) {
-          setError("Failed to restore draft.");
-          return;
-        }
+        const res = await fetch("/api/undo-dismiss-draft", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft_id: draft.draftId }) });
+        if (!res.ok) { setError("Failed to restore draft."); return; }
       }
-
       const client = supabaseRef.current;
-      if (!client) {
-        setError("Failed to restore draft.");
-        return;
-      }
-
-      const [{ data: prospectRow }, { data: inboundRows }, { data: scheduledRows }] =
-        await Promise.all([
-          client
-            .from("prospects")
-            .select("id,name,tier,phone_number,vibe_notes")
-            .eq("id", draft.prospectId)
-            .single(),
-          client
-            .from("messages")
-            .select("body,created_at,direction,event_type")
-            .eq("prospect_id", draft.prospectId)
-            .order("created_at", { ascending: false })
-            .limit(80),
-          client
-            .from("scheduled_replies")
-            .select("id,draft_text")
-            .eq("prospect_id", draft.prospectId)
-            .eq("status", "scheduled")
-            .order("created_at", { ascending: false })
-            .limit(1),
-        ]);
-
-      if (!prospectRow) {
-        setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
-        return;
-      }
-
+      if (!client) { setError("Failed to restore draft."); return; }
+      const [{ data: prospectRow }, { data: inboundRows }, { data: scheduledRows }] = await Promise.all([
+        client.from("prospects").select("id,name,tier,phone_number,vibe_notes").eq("id", draft.prospectId).single(),
+        client.from("messages").select("body,created_at,direction,event_type").eq("prospect_id", draft.prospectId).order("created_at", { ascending: false }).limit(80),
+        client.from("scheduled_replies").select("id,draft_text").eq("prospect_id", draft.prospectId).eq("status", "scheduled").order("created_at", { ascending: false }).limit(1),
+      ]);
+      if (!prospectRow) { setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId)); return; }
       const refreshedTier = coerceTier(prospectRow.tier, coerceTier(draft.tier));
       const msgRows = inboundRows ?? [];
       const scheduled = (scheduledRows ?? [])[0];
-
-      const restoreAgg: ThreadAgg = {
-        inbound: 0,
-        outbound: 0,
-        inboundText: 0,
-        inboundNoteCredit: 0,
-        outboundText: 0,
-        noteCount: 0,
-        touchBaseCount: 0,
-        total: 0,
-      };
-      let restoreLastTextOut: string | undefined;
-      let restoreLastOutBody: string | undefined;
-      let restoreLastIn: string | undefined;
-      let restoreLastInBody: string | undefined;
-      let restoreLatestDir: "inbound" | "outbound" | undefined;
-      let restoreLatestAt: string | undefined;
+      const restoreAgg: ThreadAgg = { inbound: 0, outbound: 0, inboundText: 0, inboundNoteCredit: 0, outboundText: 0, noteCount: 0, touchBaseCount: 0, total: 0 };
+      let restoreLastTextOut: string | undefined, restoreLastOutBody: string | undefined, restoreLastIn: string | undefined, restoreLastInBody: string | undefined;
+      let restoreLatestDir: "inbound" | "outbound" | undefined, restoreLatestAt: string | undefined;
       const isoMs = (iso: string) => new Date(iso).getTime();
-      for (let i = 0; i < msgRows.length; i++) {
-        const r = msgRows[i];
+      for (const r of msgRows) {
         const at = r.created_at as string;
         const isInbound = String(r.direction ?? "").toLowerCase() === "inbound";
         const isNote = (r.event_type as string) === "note";
         const bodyStr = String(r.body ?? "");
         const isReaction = isReactionMessageBody(bodyStr);
         restoreAgg.total += 1;
-        if (isInbound) {
-          restoreAgg.inbound += 1;
-          if (!isReaction) restoreAgg.inboundText += 1;
-          if (!isReaction) {
-            if (!restoreLastIn || isoMs(at) > isoMs(restoreLastIn)) {
-              restoreLastIn = at;
-              restoreLastInBody = bodyStr;
-            }
-          }
-        } else {
-          restoreAgg.outbound += 1;
-          if (!isNote && !isReaction) {
-            restoreAgg.outboundText += 1;
-            if (!restoreLastTextOut || isoMs(at) > isoMs(restoreLastTextOut)) {
-              restoreLastTextOut = at;
-              restoreLastOutBody = bodyStr;
-            }
-          }
-          if (bodyStr.includes("Touched base")) restoreAgg.touchBaseCount += 1;
-        }
-        if (isNote) {
-          restoreAgg.noteCount += 1;
-          const add = theirEngagementCreditFromNoteBody(bodyStr);
-          if (add > 0) {
-            restoreAgg.inboundNoteCredit = clampNoteEngagementCredit(
-              restoreAgg.inboundNoteCredit + add
-            );
-          }
-        }
+        if (isInbound) { restoreAgg.inbound += 1; if (!isReaction) { restoreAgg.inboundText += 1; if (!restoreLastIn || isoMs(at) > isoMs(restoreLastIn)) { restoreLastIn = at; restoreLastInBody = bodyStr; } } }
+        else { restoreAgg.outbound += 1; if (!isNote && !isReaction) { restoreAgg.outboundText += 1; if (!restoreLastTextOut || isoMs(at) > isoMs(restoreLastTextOut)) { restoreLastTextOut = at; restoreLastOutBody = bodyStr; } } if (bodyStr.includes("Touched base")) restoreAgg.touchBaseCount += 1; }
+        if (isNote) { restoreAgg.noteCount += 1; const add = theirEngagementCreditFromNoteBody(bodyStr); if (add > 0) restoreAgg.inboundNoteCredit = clampNoteEngagementCredit(restoreAgg.inboundNoteCredit + add); }
       }
-      if (restoreLastIn && restoreLastTextOut) {
-        const msIn = isoMs(restoreLastIn);
-        const msOut = isoMs(restoreLastTextOut);
-        if (msIn > msOut) {
-          restoreLatestDir = "inbound";
-          restoreLatestAt = restoreLastIn;
-        } else if (msOut > msIn) {
-          restoreLatestDir = "outbound";
-          restoreLatestAt = restoreLastTextOut;
-        } else {
-          restoreLatestDir = "inbound";
-          restoreLatestAt = restoreLastIn;
-        }
-      } else if (restoreLastIn) {
-        restoreLatestDir = "inbound";
-        restoreLatestAt = restoreLastIn;
-      } else if (restoreLastTextOut) {
-        restoreLatestDir = "outbound";
-        restoreLatestAt = restoreLastTextOut;
-      }
-      const mappedMsgRows = (msgRows as Array<{ body?: string | null; created_at: string; direction: string; event_type?: string | null }>).map(
-        (r) => ({
-          body: r.body,
-          created_at: r.created_at,
-          direction: String(r.direction ?? ""),
-          prospect_id: String(draft.prospectId),
-          event_type: r.event_type,
-        })
-      );
+      if (restoreLastIn && restoreLastTextOut) { const msIn = isoMs(restoreLastIn); const msOut = isoMs(restoreLastTextOut); restoreLatestDir = msIn > msOut ? "inbound" : "outbound"; restoreLatestAt = msIn > msOut ? restoreLastIn : restoreLastTextOut; }
+      else if (restoreLastIn) { restoreLatestDir = "inbound"; restoreLatestAt = restoreLastIn; }
+      else if (restoreLastTextOut) { restoreLatestDir = "outbound"; restoreLatestAt = restoreLastTextOut; }
+      const mappedMsgRows = (msgRows as Array<{ body?: string | null; created_at: string; direction: string; event_type?: string | null }>).map((r) => ({ body: r.body, created_at: r.created_at, direction: String(r.direction ?? ""), prospect_id: String(draft.prospectId), event_type: r.event_type }));
       const restoreTrail = computeThreadTrailSignals(mappedMsgRows);
-      const { inbound: restoreRecentIn, outbound: restoreRecentOut } = collectRecentTextBodiesForProspect(
-        mappedMsgRows,
-        String(draft.prospectId)
-      );
+      const { inbound: restoreRecentIn, outbound: restoreRecentOut } = collectRecentTextBodiesForProspect(mappedMsgRows, String(draft.prospectId));
       const restoreRemind = remindByTierRef.current[refreshedTier];
       const restoreNow = new Date();
-      const restoreMomentum =
-        restoreAgg.total > 0
-          ? computeThreadMomentum(restoreAgg, refreshedTier, {
-              lastOutboundAt: restoreLastTextOut,
-              remindAfterDays: restoreRemind,
-              now: restoreNow,
-              latestDirection: restoreLatestDir,
-              lastInboundPreview: restoreLastInBody,
-              trailSignals: restoreTrail,
-              vibeNotes: (prospectRow.vibe_notes as string) ?? undefined,
-              recentInboundTextBodies: restoreRecentIn,
-              recentOutboundTextBodies: restoreRecentOut,
-            })
-          : 0;
-      const restoreMomentumCtx: MomentumContext | undefined =
-        restoreAgg.total > 0
-          ? {
-              tier: refreshedTier,
-              remindAfterDays: restoreRemind,
-              inbound: restoreAgg.inbound,
-              outbound: restoreAgg.outbound,
-              inboundText: restoreAgg.inboundText,
-              inboundNoteCredit: restoreAgg.inboundNoteCredit,
-              outboundText: restoreAgg.outboundText,
-              total: restoreAgg.total,
-              noteCount: restoreAgg.noteCount,
-              touchBaseCount: restoreAgg.touchBaseCount,
-              lastInboundAt: restoreLastIn,
-              lastOutboundAt: restoreLastTextOut,
-              lastInboundPreview: restoreLastInBody,
-              lastOutboundPreview: restoreLastOutBody,
-              latestDirection: restoreLatestDir,
-              latestAt: restoreLatestAt,
-              inboundReactionCount: restoreTrail.inboundReactionCount,
-              outboundRunSinceTheirText: restoreTrail.outboundRunSinceTheirText,
-              tapbacksDuringYourStreak: restoreTrail.tapbacksDuringYourStreak,
-            }
-          : undefined;
-
+      const restoreMomentum = restoreAgg.total > 0 ? computeThreadMomentum(restoreAgg, refreshedTier, { lastOutboundAt: restoreLastTextOut, remindAfterDays: restoreRemind, now: restoreNow, latestDirection: restoreLatestDir, lastInboundPreview: restoreLastInBody, trailSignals: restoreTrail, vibeNotes: (prospectRow.vibe_notes as string) ?? undefined, recentInboundTextBodies: restoreRecentIn, recentOutboundTextBodies: restoreRecentOut }) : 0;
+      const restoreMomentumCtx: MomentumContext | undefined = restoreAgg.total > 0 ? { tier: refreshedTier, remindAfterDays: restoreRemind, inbound: restoreAgg.inbound, outbound: restoreAgg.outbound, inboundText: restoreAgg.inboundText, inboundNoteCredit: restoreAgg.inboundNoteCredit, outboundText: restoreAgg.outboundText, total: restoreAgg.total, noteCount: restoreAgg.noteCount, touchBaseCount: restoreAgg.touchBaseCount, lastInboundAt: restoreLastIn, lastOutboundAt: restoreLastTextOut, lastInboundPreview: restoreLastInBody, lastOutboundPreview: restoreLastOutBody, latestDirection: restoreLatestDir, latestAt: restoreLatestAt, inboundReactionCount: restoreTrail.inboundReactionCount, outboundRunSinceTheirText: restoreTrail.outboundRunSinceTheirText, tapbacksDuringYourStreak: restoreTrail.tapbacksDuringYourStreak } : undefined;
       setDismissedDrafts((prev) => prev.filter((d) => d.prospectId !== draft.prospectId));
-      void fetch("/api/unclear-prospect-briefing", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prospect_id: draft.prospectId }),
-      });
-      setDismissingDraftIds((prev) => {
-        const next = { ...prev };
-        delete next[draft.id];
-        if (draft.draftId) delete next[draft.draftId];
-        delete next[draft.prospectId];
-        return next;
-      });
-      setTierProspects((prev) => {
-        const next = { ...prev };
-        (Object.keys(next) as Tier[]).forEach((tier) => {
-          next[tier] = next[tier].filter((p) => p.id !== draft.prospectId);
-        });
-        next[refreshedTier] = [
-          {
-            id: String(prospectRow.id),
-            name: prospectRow.name ?? draft.prospectName,
-            tier: refreshedTier,
-            phoneNumber: prospectRow.phone_number ?? undefined,
-            vibeNotes: (prospectRow.vibe_notes as string) ?? undefined,
-            lastInboundBody: restoreLastInBody,
-            lastOutboundTextBody: restoreLastOutBody,
-            lastActivityAt: (msgRows[0]?.created_at as string) ?? undefined,
-            draftId: (scheduled?.id as string) ?? undefined,
-            draftText: (scheduled?.draft_text as string) ?? undefined,
-            momentum: restoreMomentum,
-            momentumContext: restoreMomentumCtx,
-          },
-          ...next[refreshedTier],
-        ];
-        return next;
-      });
-      if (scheduled?.id && scheduled?.draft_text) {
-        setDraftEdits((prev) => ({ ...prev, [scheduled.id as string]: scheduled.draft_text as string }));
-      }
-    } catch {
-      setError("Failed to restore draft.");
-    }
+      void fetch("/api/unclear-prospect-briefing", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prospect_id: draft.prospectId }) });
+      setDismissingDraftIds((prev) => { const next = { ...prev }; delete next[draft.id]; if (draft.draftId) delete next[draft.draftId]; delete next[draft.prospectId]; return next; });
+      setTierProspects((prev) => { const next = { ...prev }; (Object.keys(next) as Tier[]).forEach((tier) => { next[tier] = next[tier].filter((p) => p.id !== draft.prospectId); }); next[refreshedTier] = [{ id: String(prospectRow.id), name: prospectRow.name ?? draft.prospectName, tier: refreshedTier, phoneNumber: prospectRow.phone_number ?? undefined, vibeNotes: (prospectRow.vibe_notes as string) ?? undefined, lastInboundBody: restoreLastInBody, lastOutboundTextBody: restoreLastOutBody, lastActivityAt: (msgRows[0]?.created_at as string) ?? undefined, draftId: (scheduled?.id as string) ?? undefined, draftText: (scheduled?.draft_text as string) ?? undefined, momentum: restoreMomentum, momentumContext: restoreMomentumCtx }, ...next[refreshedTier]]; return next; });
+      if (scheduled?.id && scheduled?.draft_text) setDraftEdits((prev) => ({ ...prev, [scheduled.id as string]: scheduled.draft_text as string }));
+      toast("Restored");
+    } catch { setError("Failed to restore draft."); }
   };
 
+  // --- Data loading ---
   React.useEffect(() => {
     const config = getSupabaseConfig();
     const client = getSupabaseClient();
     supabaseRef.current = client;
-
-    if (!client) {
-      const missingParts = [
-        !config.urlPresent ? "URL" : null,
-        !config.keyPresent ? "Anon key" : null,
-      ].filter(Boolean).join(" & ");
-      setError(`Supabase is not configured (${missingParts} missing). Add env vars to .env.local and restart the dev server.`);
-      return;
-    }
-
-    if (!checked) {
-      return;
-    }
+    if (!client) { const missingParts = [!config.urlPresent ? "URL" : null, !config.keyPresent ? "Anon key" : null].filter(Boolean).join(" & "); setError(`Supabase is not configured (${missingParts} missing).`); return; }
+    if (!checked) return;
 
     const loadTierProspects = async () => {
       const [prospectsRes, messagesRes, draftsRes, dismissedRes, rulesRes] = await Promise.all([
         client.from("prospects").select("id,name,tier,phone_number,vibe_notes"),
-        client
-          .from("messages")
-          .select("id,body,created_at,direction,prospect_id,event_type")
-          .order("created_at", { ascending: false })
-          .limit(2000),
+        client.from("messages").select("id,body,created_at,direction,prospect_id,event_type").order("created_at", { ascending: false }).limit(2000),
         client.from("scheduled_replies").select("id,draft_text,prospect_id").eq("status", "scheduled").limit(100),
-        client
-          .from("scheduled_replies")
-          .select("id,draft_text,prospect_id,tier,dismissed_at,prospects(name)")
-          .eq("status", "dismissed")
-          .order("dismissed_at", { ascending: false })
-          .limit(50),
+        client.from("scheduled_replies").select("id,draft_text,prospect_id,tier,dismissed_at,prospects(name)").eq("status", "dismissed").order("dismissed_at", { ascending: false }).limit(50),
         client.from("tier_rules").select("tier,remind_after_days"),
       ]);
-
       const remindByTier = remindByTierFromRulesRows(rulesRes.data ?? []);
       remindByTierRef.current = remindByTier;
-
       const now = new Date();
-      const momentumByProspect = buildProspectMomentumStateMap(
-        prospectsRes.data ?? [],
-        messagesRes.data ?? [],
-        remindByTier,
-        now
-      );
-
+      const momentumByProspect = buildProspectMomentumStateMap(prospectsRes.data ?? [], messagesRes.data ?? [], remindByTier, now);
       const draftByProspect = new Map<string, { id: string; text: string }>();
-      for (const row of draftsRes.data ?? []) {
-        const pid = row.prospect_id as string;
-        if (!draftByProspect.has(pid)) {
-          draftByProspect.set(pid, { id: row.id as string, text: row.draft_text as string });
-        }
-      }
-
-      const result: Record<Tier, TierProspect[]> = { A: [], B: [], C: [] };
+      for (const row of draftsRes.data ?? []) { const pid = row.prospect_id as string; if (!draftByProspect.has(pid)) draftByProspect.set(pid, { id: row.id as string, text: row.draft_text as string }); }
+      const result: Record<Tier, DraftCardProspect[]> = { A: [], B: [], C: [] };
       const edits: Record<string, string> = {};
-
       for (const row of prospectsRes.data ?? []) {
         const tier = coerceTier(row.tier);
         if (!result[tier]) continue;
         const pid = String(row.id);
         const draft = draftByProspect.get(pid);
         const st = momentumByProspect.get(pid);
-        const p: TierProspect = {
-          id: pid,
-          name: row.name ?? "Unknown",
-          tier,
-          phoneNumber: row.phone_number ?? undefined,
-          vibeNotes: (row.vibe_notes as string) ?? undefined,
-          lastInboundBody: st?.lastInboundBody,
-          lastOutboundTextBody: st?.lastOutboundTextBody,
-          lastActivityAt: st?.lastActivityAt,
-          draftId: draft?.id,
-          draftText: draft?.text,
-          momentum: st?.momentum ?? 0,
-          momentumContext: st?.momentumContext,
-        };
-        result[tier].push(p);
+        result[tier].push({ id: pid, name: row.name ?? "Unknown", tier, phoneNumber: row.phone_number ?? undefined, vibeNotes: (row.vibe_notes as string) ?? undefined, lastInboundBody: st?.lastInboundBody, lastOutboundTextBody: st?.lastOutboundTextBody, lastActivityAt: st?.lastActivityAt, draftId: draft?.id, draftText: draft?.text, momentum: st?.momentum ?? 0, momentumContext: st?.momentumContext });
         if (draft) edits[draft.id] = draft.text;
       }
-
-      const dismissed: DismissedDraft[] = (dismissedRes.data ?? []).map((row) => {
-        const p = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
-        return {
-          id: row.id as string,
-          prospectId: row.prospect_id as string,
-          prospectName: (p?.name as string) ?? "Unknown",
-          tier: (row.tier as Tier) ?? "C",
-          text: (row.draft_text as string) || undefined,
-          draftId: row.id as string,
-          dismissedAt: (row.dismissed_at as string) ?? new Date().toISOString(),
-        };
-      });
-
+      const dismissed: DismissedDraft[] = (dismissedRes.data ?? []).map((row) => { const p = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects; return { id: row.id as string, prospectId: row.prospect_id as string, prospectName: (p?.name as string) ?? "Unknown", tier: (row.tier as Tier) ?? "C", text: (row.draft_text as string) || undefined, draftId: row.id as string, dismissedAt: (row.dismissed_at as string) ?? new Date().toISOString() }; });
       setTierProspects(result);
       setDraftEdits(edits);
       const rosterIds = new Set((prospectsRes.data ?? []).map((row) => String(row.id)));
-      setDismissedDrafts((prev) => {
-        const localOnly = prev.filter((d) => !d.draftId);
-        const combined = [...dismissed, ...localOnly].filter((d) => rosterIds.has(d.prospectId));
-        const byProspect = new Map<string, DismissedDraft>();
-        for (const d of combined) {
-          const cur = byProspect.get(d.prospectId);
-          if (!cur || (d.draftId && !cur.draftId)) {
-            byProspect.set(d.prospectId, d);
-          }
-        }
-        return Array.from(byProspect.values());
-      });
+      setDismissedDrafts((prev) => { const localOnly = prev.filter((d) => !d.draftId); const combined = [...dismissed, ...localOnly].filter((d) => rosterIds.has(d.prospectId)); const byProspect = new Map<string, DismissedDraft>(); for (const d of combined) { const cur = byProspect.get(d.prospectId); if (!cur || (d.draftId && !cur.draftId)) byProspect.set(d.prospectId, d); } return Array.from(byProspect.values()); });
       setRosterCount((prospectsRes.data ?? []).length);
     };
-
-    const loadActivityCount = async () => {
-      const { count } = await client
-        .from("messages")
-        .select("id", { count: "exact", head: true });
-      setActivityCount(count ?? 0);
-    };
-
-    const loadDraftsGenerated = async () => {
-      const { count } = await client
-        .from("scheduled_replies")
-        .select("id", { count: "exact", head: true });
-      setDraftsEverGenerated(count ?? 0);
-    };
-
+    const loadActivityCount = async () => { const { count } = await client.from("messages").select("id", { count: "exact", head: true }); setActivityCount(count ?? 0); };
+    const loadDraftsGenerated = async () => { const { count } = await client.from("scheduled_replies").select("id", { count: "exact", head: true }); setDraftsEverGenerated(count ?? 0); };
     loadTierProspects();
     loadActivityCount();
     loadDraftsGenerated();
   }, [checked]);
 
-  const handleTouchedBase = async (prospect: TierProspect, draftSummary?: string) => {
+  const handleTouchedBase = async (prospect: DraftCardProspect, draftSummary?: string) => {
     const client = supabaseRef.current;
     if (!client) return;
-    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) {
-      setPaywallFeature("Roster over free limit");
-      setShowPaywall(true);
-      return;
-    }
+    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) { setPaywallFeature("Roster over free limit"); setShowPaywall(true); return; }
     const snap = await fetchFreeLoggingCounts(client);
-    if (
-      checked &&
-      !isPro &&
-      !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)
-    ) {
-      setPaywallFeature("Unlimited logging");
-      setShowPaywall(true);
-      return;
-    }
+    if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) { setPaywallFeature("Unlimited logging"); setShowPaywall(true); return; }
     setQuickTouchingId(prospect.id);
     setError(null);
-    const insertPayload: Record<string, unknown> = {
-      prospect_id: prospect.id,
-      direction: "outbound",
-      body: "Touched base",
-    };
+    const insertPayload: Record<string, unknown> = { prospect_id: prospect.id, direction: "outbound", body: "Touched base" };
     if (messagesEventTypeRef.current) insertPayload.event_type = "note";
-
     let { error: insertError } = await client.from("messages").insert(insertPayload);
-    if (insertError?.message?.includes("event_type")) {
-      messagesEventTypeRef.current = false;
-      delete insertPayload.event_type;
-      const retry = await client.from("messages").insert(insertPayload);
-      insertError = retry.error;
-    }
-
-    if (insertError) {
-      setError(insertError.message);
-      setQuickTouchingId(null);
-      return;
-    }
-
+    if (insertError?.message?.includes("event_type")) { messagesEventTypeRef.current = false; delete insertPayload.event_type; const retry = await client.from("messages").insert(insertPayload); insertError = retry.error; }
+    if (insertError) { setError(insertError.message); setQuickTouchingId(null); return; }
     const dismissKey = prospect.draftId || prospect.id;
-    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
-      navigator.vibrate([12, 45, 12]);
-    }
-
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate([12, 45, 12]);
     setDismissingDraftIds((prev) => ({ ...prev, [dismissKey]: true }));
-
     window.setTimeout(() => {
-      const dismissedAt = new Date().toISOString();
-      setDismissedDrafts((prev) => [
-        {
-          id: dismissKey,
-          prospectId: prospect.id,
-          prospectName: prospect.name,
-          tier: prospect.tier,
-          text: draftSummary ?? prospect.draftText,
-          draftId: prospect.draftId,
-          dismissedAt,
-        },
-        ...prev.filter((d) => d.id !== dismissKey),
-      ]);
-
-      if (prospect.draftId) {
-        void fetch("/api/dismiss-draft", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draft_id: prospect.draftId }),
-        })
-          .then((res) => {
-            if (!res.ok) {
-              setError("Logged touch, but could not sync hidden draft to the server.");
-            }
-          })
-          .catch(() => {
-            setError("Logged touch, but could not sync hidden draft to the server.");
-          });
-      }
-
+      setDismissedDrafts((prev) => [{ id: dismissKey, prospectId: prospect.id, prospectName: prospect.name, tier: prospect.tier, text: draftSummary ?? prospect.draftText, draftId: prospect.draftId, dismissedAt: new Date().toISOString() }, ...prev.filter((d) => d.id !== dismissKey)]);
+      if (prospect.draftId) void fetch("/api/dismiss-draft", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ draft_id: prospect.draftId }) });
       setActivityCount((c) => c + 1);
       setQuickTouchingId(null);
-      setDismissingDraftIds((prev) => {
-        const next = { ...prev };
-        delete next[dismissKey];
-        return next;
-      });
-      setTouchBaseToast("Interaction Logged.");
-      window.setTimeout(() => setTouchBaseToast(null), 1000);
+      setDismissingDraftIds((prev) => { const next = { ...prev }; delete next[dismissKey]; return next; });
+      toast("Logged", "success");
     }, 300);
   };
 
   const bumpRegenCount = React.useCallback((draftId: string) => {
-    setRegenByDraftId((prev) => {
-      const next = { ...prev, [draftId]: (prev[draftId] ?? 0) + 1 };
-      try {
-        window.localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    setRegenByDraftId((prev) => { const next = { ...prev, [draftId]: (prev[draftId] ?? 0) + 1 }; try { window.localStorage.setItem(REGEN_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ } return next; });
   }, []);
 
-  const handleGenerateDraft = async (
-    prospect: TierProspect,
-    opts?: { regenerate?: boolean }
-  ) => {
+  const handleGenerateDraft = async (prospect: DraftCardProspect, opts?: { regenerate?: boolean }) => {
     const regenerating = Boolean(opts?.regenerate && prospect.draftId);
-    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) {
-      setPaywallFeature("Roster over free limit");
-      setShowPaywall(true);
-      return;
-    }
-    if (regenerating && !isPro) {
-      setPaywallFeature("Regenerate draft");
-      setShowPaywall(true);
-      return;
-    }
-    if (!regenerating && !isPro && draftsEverGenerated >= FREE_AI_DRAFTS) {
-      setPaywallFeature("AI drafts");
-      setShowPaywall(true);
-      return;
-    }
-    if (
-      regenerating &&
-      prospect.draftId &&
-      isPro &&
-      !isElite &&
-      (regenByDraftId[prospect.draftId] ?? 0) >= PRO_REGEN_LIMIT
-    ) {
-      setError(
-        "Pro includes 5 regenerations per draft. Elite adds unlimited regenerations and tone styles."
-      );
-      return;
-    }
+    if (checked && freeUserOverRosterLimit(rosterCount, isPro)) { setPaywallFeature("Roster over free limit"); setShowPaywall(true); return; }
+    if (regenerating && !isPro) { setPaywallFeature("Regenerate draft"); setShowPaywall(true); return; }
+    if (!regenerating && !isPro && draftsEverGenerated >= FREE_AI_DRAFTS) { setPaywallFeature("AI drafts"); setShowPaywall(true); return; }
+    if (regenerating && prospect.draftId && isPro && !isElite && (regenByDraftId[prospect.draftId] ?? 0) >= PRO_REGEN_LIMIT) { setError("Pro includes 5 regenerations per draft. Elite adds unlimited."); return; }
     setIsGenerating(prospect.id);
     setError(null);
     try {
-      const toneStyle = isElite
-        ? draftToneByProspect[prospect.id] ?? "balanced"
-        : undefined;
+      const toneStyle = isElite ? draftToneByProspect[prospect.id] ?? "balanced" : undefined;
       const youTextedLast = prospect.momentumContext?.latestDirection === "outbound";
-      const res = await fetch("/api/generate-response", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          tier: prospect.tier,
-          name: prospect.name,
-          vibeNotes: prospect.vibeNotes || "",
-          incomingText: youTextedLast ? "" : prospect.lastInboundBody || "",
-          ...(youTextedLast ? { youTextedLast: true } : {}),
-          prospectId: prospect.id,
-          ...(toneStyle ? { toneStyle } : {}),
-          ...(regenerating ? { regenerate: true } : {}),
-        }),
-      });
-      const data = (await res.json()) as {
-        error?: string;
-        code?: string;
-        draft?: string;
-        suggestedReply?: string;
-        autoReply?: string;
-      };
+      const res = await fetch("/api/generate-response", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ tier: prospect.tier, name: prospect.name, vibeNotes: prospect.vibeNotes || "", incomingText: youTextedLast ? "" : prospect.lastInboundBody || "", ...(youTextedLast ? { youTextedLast: true } : {}), prospectId: prospect.id, ...(toneStyle ? { toneStyle } : {}), ...(regenerating ? { regenerate: true } : {}) }) });
+      const data = (await res.json()) as { error?: string; code?: string; draft?: string; suggestedReply?: string; autoReply?: string };
       if (!res.ok || data?.error) {
         const code = data?.code;
-        if (
-          code === "REGENERATE_REQUIRES_PRO" ||
-          code === "DRAFT_LIMIT" ||
-          code === "ROSTER_OVER_FREE_LIMIT"
-        ) {
-          setPaywallFeature(
-            code === "REGENERATE_REQUIRES_PRO"
-              ? "Regenerate draft"
-              : code === "ROSTER_OVER_FREE_LIMIT"
-                ? "Roster over free limit"
-                : "AI drafts"
-          );
-          setShowPaywall(true);
-          return;
-        }
-        setError(data?.error ?? "Failed to generate draft.");
-        return;
+        if (code === "REGENERATE_REQUIRES_PRO" || code === "DRAFT_LIMIT" || code === "ROSTER_OVER_FREE_LIMIT") { setPaywallFeature(code === "REGENERATE_REQUIRES_PRO" ? "Regenerate draft" : code === "ROSTER_OVER_FREE_LIMIT" ? "Roster over free limit" : "AI drafts"); setShowPaywall(true); return; }
+        setError(data?.error ?? "Failed to generate draft."); return;
       }
       const draftText = data.draft ?? data.suggestedReply ?? data.autoReply ?? "";
-      if (!draftText.trim()) {
-        setError("No draft was generated for this message.");
-        return;
-      }
+      if (!draftText.trim()) { setError("No draft was generated."); return; }
       const client = supabaseRef.current;
       if (!client) return;
-
       if (regenerating && prospect.draftId) {
-        const { data: updated, error: upErr } = await client
-          .from("scheduled_replies")
-          .update({ draft_text: draftText })
-          .eq("id", prospect.draftId)
-          .select("id,draft_text")
-          .single();
-        if (upErr || !updated) {
-          setError(upErr?.message ?? "Failed to update draft.");
-          return;
-        }
-        const id = String(updated.id);
-        const text = String(updated.draft_text ?? "");
-        setTierProspects((prev) => {
-          const next = { ...prev };
-          next[prospect.tier] = next[prospect.tier].map((p) =>
-            p.id === prospect.id ? { ...p, draftId: id, draftText: text } : p
-          );
-          return next;
-        });
+        const { data: updated, error: upErr } = await client.from("scheduled_replies").update({ draft_text: draftText }).eq("id", prospect.draftId).select("id,draft_text").single();
+        if (upErr || !updated) { setError(upErr?.message ?? "Failed to update draft."); return; }
+        const id = String(updated.id); const text = String(updated.draft_text ?? "");
+        setTierProspects((prev) => { const next = { ...prev }; next[prospect.tier] = next[prospect.tier].map((p) => p.id === prospect.id ? { ...p, draftId: id, draftText: text } : p); return next; });
         setDraftEdits((prev) => ({ ...prev, [id]: text }));
         expectOutcomeAfterNextScreenshot(id, prospect.id);
         if (isPro && !isElite) bumpRegenCount(id);
         return;
       }
-
-      // DB compatibility: some schema versions only allow scheduled_replies.tier in ('B','C').
       const queueTier = prospect.tier === "A" ? "B" : prospect.tier;
       const insertPayloads: Array<Record<string, unknown>> = [
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText },
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText, status: "scheduled" },
         { prospect_id: prospect.id, tier: queueTier, draft_text: draftText, status: "pending" },
       ];
-
       type ScheduledDraftRow = { id: string; draft_text: string };
       let insertResult: PostgrestSingleResponse<ScheduledDraftRow> | undefined = undefined;
-
-      for (const payload of insertPayloads) {
-        const attempt: PostgrestSingleResponse<ScheduledDraftRow> = await client
-          .from("scheduled_replies")
-          .insert(payload)
-          .select("id,draft_text")
-          .single();
-        insertResult = attempt;
-        if (!attempt.error && attempt.data) break;
-      }
-
+      for (const payload of insertPayloads) { const attempt: PostgrestSingleResponse<ScheduledDraftRow> = await client.from("scheduled_replies").insert(payload).select("id,draft_text").single(); insertResult = attempt; if (!attempt.error && attempt.data) break; }
       const row = insertResult?.data;
-      if (!row) {
-        setError(insertResult?.error?.message ?? "Failed to save generated draft.");
-        return;
-      }
-
+      if (!row) { setError(insertResult?.error?.message ?? "Failed to save draft."); return; }
       const inserted = { id: String(row.id), draftText: String(row.draft_text ?? "") };
-      setTierProspects((prev) => {
-        const next = { ...prev };
-        next[prospect.tier] = next[prospect.tier].map((p) =>
-          p.id === prospect.id ? { ...p, draftId: inserted.id, draftText: inserted.draftText } : p
-        );
-        return next;
-      });
+      setTierProspects((prev) => { const next = { ...prev }; next[prospect.tier] = next[prospect.tier].map((p) => p.id === prospect.id ? { ...p, draftId: inserted.id, draftText: inserted.draftText } : p); return next; });
       setDraftEdits((prev) => ({ ...prev, [inserted.id]: inserted.draftText }));
       setDraftsEverGenerated((n) => n + 1);
       expectOutcomeAfterNextScreenshot(inserted.id, prospect.id);
-    } catch {
-      setError("Failed to generate draft.");
-    } finally {
-      setIsGenerating(null);
-    }
+    } catch { setError("Failed to generate draft."); } finally { setIsGenerating(null); }
   };
 
-  const handleSubscribe = async () => {
-    setIsCheckoutLoading(true);
-    setError(null);
+  const shareDraftText = async (text: string, prospectName: string) => {
     try {
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: "monthly", tier: "pro" }),
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || data.error) {
-        setError(data.error ?? `Checkout failed (${res.status}). Check Stripe env vars on Vercel.`);
-        return;
-      }
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        setError("No checkout URL returned. Check STRIPE_PRICE_ID on Vercel.");
-      }
-    } catch (err) {
-      setError(`Checkout error: ${err instanceof Error ? err.message : "unknown"}`);
-    } finally {
-      setIsCheckoutLoading(false);
-    }
+      await navigator.clipboard.writeText(text);
+      toast("Copied to clipboard", "success");
+      if (typeof navigator.share === "function") await navigator.share({ text, title: `Draft for ${prospectName}` });
+    } catch (err) { if (err instanceof Error && err.name !== "AbortError") setError("Could not copy."); }
   };
 
-  const totalProspects = rosterCount;
-  const hasProspects = totalProspects > 0;
+  // --- Derived state ---
+  const hasProspects = rosterCount > 0;
   const hasActivity = activityCount > 0;
   const dismissedProspectIds = new Set(dismissedDrafts.map((d) => d.prospectId));
-
   const tierOrder: Tier[] = ["A", "B", "C"];
-  const tierLabels: Record<Tier, string> = {
-    A: "Top picks (A)",
-    B: "In the mix (B)",
-    C: "Casual (C)",
-  };
-  const tierPlain: Record<Tier, string> = { A: "Top picks", B: "In the mix", C: "Casual" };
-
-  const aListWaitingOnYou = React.useMemo(
-    () => flattenTierProspects(tierProspects).filter((p) => isAtGhostingRisk(p)).length,
-    [tierProspects]
-  );
-
-  const legacyRosterBlock = checked && freeUserOverRosterLimit(rosterCount, isPro);
+  const tierLabels: Record<Tier, string> = { A: "Top picks", B: "In the mix", C: "Casual" };
+  const aListWaitingOnYou = React.useMemo(() => flattenTierProspects(tierProspects).filter((p) => isAtGhostingRisk(p)).length, [tierProspects]);
 
   return (
-    <div className="space-y-3 sm:space-y-8">
-      <header className="relative">
-        <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-4">
-          <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-[0.35em] sm:text-3xl">STACK</h1>
-          <p className="mt-1 text-[11px] leading-snug text-[var(--rm-text-muted)] sm:text-xs">
-            Rank people, log threads, draft under pressure — a mirror on attention, not a birthday book.
-          </p>
-          <p className="mt-2 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)]">
-            Tier ·{" "}
-            <span className="text-[var(--rm-text)]">
-              {accountTier === null
-                ? "…"
-                : accountTier === "free"
-                  ? "Free"
-                  : accountTier === "pro"
-                    ? "Pro"
-                    : "Elite"}
-            </span>
-          </p>
-          {legacyRosterBlock ? (
-            <p className="mt-3 max-w-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100/90">
-              Free tier is <strong className="text-[var(--rm-text)]">1 person</strong> on your roster. You have more
-              than that — upgrade to Pro to generate drafts, log texts, and import screenshots. Or remove people until
-              you&apos;re at one.
-            </p>
-          ) : null}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
-          <Link
-            href="/roster"
-            className="border border-[var(--rm-border)] px-2.5 py-1 text-[10px] uppercase tracking-[0.32em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text)] sm:px-4 sm:py-2 sm:text-xs sm:tracking-[0.4em]"
-          >
-            {rosterCount} {rosterCount === 1 ? "person" : "people"}
-          </Link>
-
-          {isPro ? (
-            <span
-              className={`flex items-center gap-1 border px-2 py-0.5 text-[9px] uppercase tracking-[0.3em] sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.35em] ${
-                isElite
-                  ? "border-amber-500/45 text-amber-300/95"
-                  : "border-emerald-500/40 text-emerald-400"
-              }`}
-            >
-              <Sparkles size={10} strokeWidth={1.5} />
-              {isElite ? "Elite" : "Pro"}
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowPaywall(true)}
-              className="text-[10px] uppercase tracking-[0.3em] text-slate-500 transition hover:text-slate-300"
-            >
-              Upgrade
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={async () => {
-              const { createBrowserSupabase } = await import("../../../lib/supabase/browser");
-              await createBrowserSupabase().auth.signOut();
-              window.location.href = "/login";
-            }}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--rm-border)]/55 bg-[var(--rm-bg-elevated)]/55 text-[var(--rm-text-muted)] backdrop-blur-sm transition hover:border-[color:var(--rm-border)] hover:bg-[var(--rm-bg-elevated)]/85 hover:text-[var(--rm-text)] active:scale-[0.97] sm:h-7 sm:w-7"
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={13} strokeWidth={1.35} />
-          </button>
+    <div className="space-y-6">
+      {/* Header */}
+      <header className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-[0.3em]">STACK</h1>
+          <div className="mt-1 flex items-center gap-2">
+            {isPro ? (
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${isElite ? "border-amber-500/40 text-amber-300" : "border-emerald-500/40 text-emerald-400"}`}>
+                <Sparkles size={10} strokeWidth={1.5} />
+                {isElite ? "Elite" : "Pro"}
+              </span>
+            ) : (
+              <button type="button" onClick={() => setShowPaywall(true)} className="text-[11px] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]">
+                Upgrade
+              </button>
+            )}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={async () => { const { createBrowserSupabase } = await import("../../../lib/supabase/browser"); await createBrowserSupabase().auth.signOut(); window.location.href = "/login"; }}
+          className="rounded-lg border border-[var(--rm-border)] p-2 text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
+          aria-label="Sign out"
+        >
+          <LogOut size={16} strokeWidth={1.25} />
+        </button>
       </header>
 
-      {showCheckoutCanceledBanner && !isPro ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm">
-          <p className="text-amber-50/95">
-            Checkout paused — no worries. Continue when you&apos;re ready; nothing changed in your account.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setShowCheckoutCanceledBanner(false);
-                setPaywallFeature("STACK Pro");
-                setShowPaywall(true);
-              }}
-              className="rounded-full bg-[var(--rm-text)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--rm-bg)] transition hover:opacity-90"
-            >
-              Continue to Pro
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCheckoutCanceledBanner(false)}
-              className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {shadowRosterNudge ? (
-        <div className="relative overflow-hidden rounded-lg border border-[color:var(--rm-alert)]/45 bg-[var(--rm-alert-muted)] shadow-[0_0_24px_rgba(251,191,36,0.08)]">
-          <div className="absolute left-0 top-0 h-full w-1 bg-[var(--rm-alert)]/80" aria-hidden />
-          <div className="p-4 pl-5 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-[0.28em] text-[var(--rm-alert-bright)]">
-                  Shadow roster · read this once
-                </p>
-                <h3 className="mt-1.5 text-base font-semibold text-[var(--rm-text)]">
-                  Example: <span className="text-[var(--rm-alert-bright)]">Raven</span>{" "}
-                  <span className="text-[var(--rm-text-muted)] font-normal">(C-tier)</span>
-                </h3>
-                <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--rm-text-muted)]">
-                  If your log looked like this — <strong className="text-[var(--rm-text)]">~85% your rows</strong>,{" "}
-                  their side thin — you&apos;re over-investing in someone you ranked casual. Pulse tags{" "}
-                  <span className="text-[var(--rm-alert-bright)]">their read</span> and flags{" "}
-                  <span className="text-[var(--rm-alert-bright)]">energy leaks</span> once Texts is populated.
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="rounded border border-slate-500/50 px-2 py-0.5 font-mono text-[10px] text-slate-400">
-                    C
-                  </span>
-                  <div className="h-2 min-w-0 flex-1 max-w-xs overflow-hidden rounded-sm bg-black/50 ring-1 ring-violet-500/20">
-                    <div className="flex h-full w-full">
-                      <div className="h-full bg-violet-500/60" style={{ width: "15%" }} title="Their texts" />
-                      <div className="h-full bg-[var(--rm-alert)]/70" style={{ width: "85%" }} title="Your texts / engagement" />
-                    </div>
-                  </div>
-                  <span className="font-mono text-[10px] text-[var(--rm-alert-bright)]">85% out</span>
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-col gap-2">
-                <Link
-                  href="/metrics"
-                  className="rounded-full border border-[var(--rm-alert)]/50 bg-black/30 px-4 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--rm-alert-bright)] transition hover:bg-[var(--rm-alert)]/10"
-                  onClick={() => setShadowRosterNudge(false)}
-                >
-                  Open Pulse
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setShadowRosterNudge(false)}
-                  className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:text-[var(--rm-text)]"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
+      {/* Error */}
+      {error && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-sm text-rose-300">
           {error}
+          <button type="button" onClick={() => setError(null)} className="ml-2 text-rose-400 underline">dismiss</button>
         </div>
-      ) : null}
+      )}
 
-      {touchBaseToast ? (
-        <div className="fixed bottom-6 left-1/2 z-[75] -translate-x-1/2 border border-emerald-500/30 bg-[var(--rm-bg-elevated)] px-4 py-2.5 text-sm text-emerald-100/95 shadow-lg">
-          {touchBaseToast}
+      {/* Onboarding */}
+      <OnboardingBanner hasProspects={hasProspects} hasActivity={hasActivity} isPro={isPro} draftsEverGenerated={draftsEverGenerated} />
+
+      {/* A-list alert */}
+      {hasProspects && hasActivity && aListWaitingOnYou > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-100">
+          {aListWaitingOnYou === 1
+            ? "One top pick went last — you have an open loop."
+            : `${aListWaitingOnYou} top picks went last — open loops.`}
         </div>
-      ) : null}
+      )}
 
-      {undoToast ? (
-        <div className="fixed right-4 top-4 z-[70] border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-sm shadow-lg">
-          <div className="flex items-center gap-3">
-            <span className="text-[var(--rm-text-muted)]">Draft hidden</span>
-            <button
-              type="button"
-              onClick={handleUndoDismiss}
-              className="text-xs uppercase tracking-[0.2em] text-blue-300 transition hover:text-blue-200"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              onClick={() => setUndoToast(null)}
-              className="text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text-muted)]"
-              aria-label="Close toast"
-            >
-              <X size={12} strokeWidth={1.5} />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Onboarding step 1: no prospects yet */}
-      {!hasProspects ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:p-6">
-          <h2 className="text-base font-semibold tracking-wide">Add who you&apos;re texting</h2>
-          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Use the <strong className="font-medium text-[var(--rm-text)]">People</strong> tab. Mark who matters
-            most as A and who&apos;s casual as C — the AI matches your tone to that.
-          </p>
-          <Link
-            href="/roster"
-            className="mt-4 flex w-fit items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
-          >
-            <UserPlus size={13} strokeWidth={1.25} />
-            Add them
-          </Link>
-        </section>
-      ) : null}
-
-      {/* Onboarding step 2: has prospects but no activity */}
-      {hasProspects && !hasActivity ? (
-        <section className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:p-6">
-          <h2 className="text-base font-semibold tracking-wide">Add something from your texts</h2>
-          <p className="mt-1.5 text-sm text-[var(--rm-text-muted)]">
-            Open <strong className="font-medium text-[var(--rm-text)]">Texts</strong> and either upload a
-            screenshot or type a short note. Without that, the AI is guessing.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Link
-              href="/inbox"
-              className="flex items-center gap-2 rounded-full border border-[var(--rm-text)] px-5 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
-            >
-              <ImagePlus size={13} strokeWidth={1.25} />
-              Open Texts tab
-            </Link>
-          </div>
-        </section>
-      ) : null}
-
-      {/* Robin demo — loss leader example */}
-      {hasProspects && !hasActivity && !robinDemoDismissed ? (
-        <section className="relative border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 shadow-[0_0_0_1px_rgba(251,191,36,0.12),0_20px_50px_rgba(0,0,0,0.45)] sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-amber-300/90">Example card</p>
-              <h2 className="mt-1 text-base font-semibold tracking-wide text-[var(--rm-text)]">
-                The Loss Leader <span className="text-[var(--rm-text-muted)] font-normal">(Robin)</span>
-              </h2>
-              <p className="mt-1 text-[11px] text-[var(--rm-text-muted)]">
-                C-tier · ~90% your rows · <span className="text-amber-200/90">their read: thin</span> — attention leak
-                (example).
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  localStorage.setItem(ROBIN_DEMO_DISMISSED_KEY, "1");
-                } catch {
-                  /* ignore */
-                }
-                setRobinDemoDismissed(true);
-              }}
-              className="shrink-0 border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:border-amber-500/40 hover:text-[var(--rm-text)]"
-            >
-              Dismiss
-            </button>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <span className="rounded border border-slate-500/40 px-2 py-0.5 font-mono text-[10px] text-slate-400">C</span>
-            <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-black/40 ring-1 ring-violet-500/20">
-              <div className="flex h-full w-full">
-                <div className="h-full bg-violet-500/60" style={{ width: "10%" }} title="Their texts" />
-                <div className="h-full bg-amber-500/60" style={{ width: "90%" }} title="Your texts / engagement" />
-              </div>
-            </div>
-            <span className="shrink-0 text-[9px] text-[var(--rm-text-muted)]">90% yours</span>
-          </div>
-          <p className="mt-3 text-[9px] uppercase tracking-[0.18em] text-amber-400/85">Pulse flags this on your real data.</p>
-        </section>
-      ) : null}
-
-      {/* Onboarding step 3: has activity but hasn't generated a draft yet */}
-      {hasProspects && hasActivity && !isPro && draftsEverGenerated === 0 ? (
-        <section className="border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
-          <h2 className="text-base font-semibold tracking-wide">Try one AI reply (free)</h2>
-          <p className="mt-1.5 text-xs text-[var(--rm-text-muted)]">
-            Tap <span className="text-[var(--rm-text)]">Generate Draft</span> — first free.
-          </p>
-        </section>
-      ) : null}
-
-      {hasProspects && hasActivity && aListWaitingOnYou > 0 ? (
-        <div className="rounded-lg border border-amber-500/45 bg-amber-500/10 px-4 py-3 text-sm">
-          <p className="text-amber-50/95">
-            {aListWaitingOnYou === 1
-              ? "A-list · they went last in the log and you haven&apos;t outbound-replied — that&apos;s an open power loop. Hit them first."
-              : `${aListWaitingOnYou} A-list threads · they went last, you're quiet outbound — open loops. Work top to bottom.`}
-          </p>
-          <Link
-            href="#stack-roster-cards"
-            className="mt-2 inline-block text-xs font-medium text-amber-200 underline underline-offset-2"
-          >
-            Jump to the list
+      {/* Insights link */}
+      {hasProspects && hasActivity && (
+        <div className="text-center">
+          <Link href="/metrics" className="text-xs text-[var(--rm-text-muted)] underline decoration-[var(--rm-border)] underline-offset-2 transition hover:text-[var(--rm-text)]">
+            See insights
           </Link>
         </div>
-      ) : null}
+      )}
 
-      {hasProspects && hasActivity ? (
-        <p className="text-center text-[10px] uppercase tracking-[0.28em] text-[var(--rm-text-muted)]">
-          <Link
-            href="/metrics"
-            className="text-amber-400/85 underline decoration-amber-500/30 underline-offset-2 transition hover:text-amber-300"
-          >
-            Pulse
-          </Link>{" "}
-          · leverage map, truth mirror, social equity
-        </p>
-      ) : null}
-
-      {/* Tier sections — only show when there are prospects */}
-      {hasProspects ? (
-        <div id="stack-roster-cards" className="space-y-3 sm:space-y-6">
+      {/* Draft cards by tier */}
+      {hasProspects && (
+        <div className="space-y-6">
           {tierOrder.map((tier) => {
-            const visibleProspects = tierProspects[tier].filter((p) => !dismissedProspectIds.has(p.id));
-            if (visibleProspects.length === 0) return null;
+            const visible = tierProspects[tier].filter((p) => !dismissedProspectIds.has(p.id));
+            if (visible.length === 0) return null;
             return (
-              <section key={tier} className="space-y-1 sm:space-y-3">
-                <p
-                  className={`text-[10px] uppercase tracking-[0.32em] sm:text-xs sm:tracking-[0.4em] ${
-                    tier === "A" ? "text-amber-400/95" : "text-[var(--rm-text-muted)]"
-                  }`}
-                >
-                  {tierLabels[tier]}
+              <section key={tier}>
+                <p className={`label mb-3 ${tier === "A" ? "text-amber-400" : "text-[var(--rm-text-muted)]"}`}>
+                  {tierLabels[tier]} ({visible.length})
                 </p>
-                <div className="space-y-1.5 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:space-y-3 sm:p-4">
-                  {visibleProspects.map((prospect) => {
+                <div className="space-y-3">
+                  {visible.map((prospect) => {
                     const draftId = prospect.draftId;
                     const currentDraft = draftId ? (draftEdits[draftId] ?? prospect.draftText ?? "") : "";
-                    const generatingNoDraft = isGenerating === prospect.id;
                     const dismissKey = draftId || prospect.id;
-                    const regenUsed = draftId ? (regenByDraftId[draftId] ?? 0) : 0;
-                    const regenBlocked =
-                      (!isPro && Boolean(draftId)) ||
-                      (isPro && !isElite && Boolean(draftId) && regenUsed >= PRO_REGEN_LIMIT);
-                    const youTextedLast = prospect.momentumContext?.latestDirection === "outbound";
-                    const clipCtx = (s: string) => (s.length > 80 ? `${s.slice(0, 80)}…` : s);
-                    const stackQuoteYou =
-                      youTextedLast && Boolean(prospect.lastOutboundTextBody?.trim());
-                    const stackQuoteYouPlain = youTextedLast && !stackQuoteYou;
-                    const stackQuoteThem = !youTextedLast && Boolean(prospect.lastInboundBody?.trim());
-                    const hasStackContextQuote = stackQuoteYou || stackQuoteYouPlain || stackQuoteThem;
-                    const tacticalAudit = tacticalNoteFromContext(
-                      prospect.tier,
-                      prospect.momentumContext,
-                      prospect.momentum,
-                      prospect.name
-                    );
-
                     return (
-                      <div
+                      <DraftCard
                         key={prospect.id}
-                        role="presentation"
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest("[data-stack-card-stop]")) return;
-                          router.push(`/inbox?prospect=${encodeURIComponent(prospect.id)}`);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key !== "Enter" && e.key !== " ") return;
-                          if ((e.target as HTMLElement).closest("[data-stack-card-stop]")) return;
-                          e.preventDefault();
-                          router.push(`/inbox?prospect=${encodeURIComponent(prospect.id)}`);
-                        }}
-                        title="Open Texts & notes for this person"
-                        className={`relative cursor-pointer border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2.5 shadow-[0_4px_18px_rgba(0,0,0,0.32)] transition-opacity duration-300 ease-out sm:p-5 ${
-                          dismissingDraftIds[dismissKey] ? "pointer-events-none opacity-0" : "opacity-100"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-                            <p className="min-w-0 truncate text-sm font-semibold">{prospect.name}</p>
-                            <div
-                              className="relative shrink-0"
-                              data-momentum-root={prospect.id}
-                              data-stack-card-stop
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setMomentumPopoverId((id) => (id === prospect.id ? null : prospect.id))
-                                }
-                                className={`flex max-w-[10.5rem] items-center gap-1 rounded-full border px-2 py-1 text-left transition hover:bg-[var(--rm-bg-elevated)] ${
-                                  (prospect.momentum ?? 0) > 0
-                                    ? "border-amber-500/45 text-amber-100/95"
-                                    : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-                                }`}
-                                aria-expanded={momentumPopoverId === prospect.id}
-                                aria-haspopup="dialog"
-                                title="Active Charisma Score (0–100): how well you’re keeping up on this chat"
-                              >
-                                <Wand2 size={12} strokeWidth={1.5} className="shrink-0 text-amber-400/90" aria-hidden />
-                                <span className="flex min-w-0 flex-col gap-0.5">
-                                  <span className="text-[12px] font-semibold tabular-nums leading-none tracking-tight">
-                                    {prospect.momentum ?? 0}
-                                  </span>
-                                  <span className="line-clamp-2 text-[8px] font-medium leading-snug text-[var(--rm-text-muted)] normal-case tracking-normal">
-                                    {momentumTeaser(
-                                      prospect.name,
-                                      prospect.momentum ?? 0,
-                                      prospect.momentumContext
-                                    )}
-                                  </span>
-                                </span>
-                              </button>
-                              {momentumPopoverId === prospect.id ? (
-                                <div
-                                  data-momentum-popover
-                                  role="dialog"
-                                  aria-label={`Active Charisma Score for ${prospect.name}`}
-                                  className="fixed z-[80] max-h-[min(70vh,calc(100dvh-2rem))] overflow-y-auto border border-amber-500/30 bg-[var(--rm-bg-elevated)] p-3 text-left opacity-0 shadow-xl transition-opacity duration-75"
-                                >
-                                  <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-amber-400/95">
-                                    Active Charisma · {prospect.momentum ?? 0}/100 · {tierPlain[prospect.tier]}
-                                  </p>
-                                  <div className="mt-2 space-y-2.5 text-[11px] leading-snug text-[var(--rm-text-muted)] normal-case tracking-normal">
-                                    {momentumPopoverLines(
-                                      prospect.name,
-                                      prospect.momentum ?? 0,
-                                      prospect.momentumContext
-                                    ).map((para, i) => (
-                                      <p key={i}>{para}</p>
-                                    ))}
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-1.5" data-stack-card-stop>
-                            {prospect.lastActivityAt ? (
-                              <span className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                                {formatRelativeTime(prospect.lastActivityAt)}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] uppercase tracking-[0.15em] text-[var(--rm-text-muted)]/50">
-                                —
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                draftId
-                                  ? handleDismissCard(prospect, draftId, currentDraft)
-                                  : handleDismissCard(prospect)
-                              }
-                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-600/60 bg-slate-900/60 text-slate-400 transition hover:border-slate-500 hover:bg-slate-800/80 hover:text-slate-100 active:text-rose-300"
-                              aria-label="Hide card"
-                              title="Hide card — open Hidden cards below to bring back"
-                            >
-                              <X size={14} strokeWidth={1.5} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {tacticalAudit ? (
-                          <p
-                            className="mt-2 border border-amber-500/35 bg-amber-950/20 px-2.5 py-2 text-[10px] leading-snug text-amber-100/95"
-                            data-stack-card-stop
-                          >
-                            <span className="font-semibold uppercase tracking-[0.12em] text-amber-400/95">
-                              Heads up ·{" "}
-                            </span>
-                            {tacticalAudit}
-                          </p>
-                        ) : null}
-
-                        {isElite ? (
-                          <div className="mt-2 border-t border-[var(--rm-border)]/50 pt-2" data-stack-card-stop>
-                            <p className="mb-1 text-[8px] uppercase tracking-[0.2em] text-slate-500">
-                              Draft tone
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                              {ELITE_TONES.map((t) => {
-                                const active =
-                                  (draftToneByProspect[prospect.id] ?? "balanced") === t.id;
-                                return (
-                                  <button
-                                    key={t.id}
-                                    type="button"
-                                    onClick={() =>
-                                      setDraftToneByProspect((prev) => ({
-                                        ...prev,
-                                        [prospect.id]: t.id,
-                                      }))
-                                    }
-                                    className={`rounded-full px-2 py-0.5 text-[8px] uppercase tracking-[0.08em] transition ${
-                                      active
-                                        ? "border border-amber-500/50 bg-amber-500/10 text-amber-100/90"
-                                        : "border border-transparent text-slate-500 hover:border-slate-600/50 hover:text-slate-300"
-                                    }`}
-                                  >
-                                    {t.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {draftId && currentDraft ? (
-                          <>
-                            {stackQuoteYou ? (
-                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
-                                <span className="text-slate-600">You · </span>
-                                &ldquo;
-                                {clipCtx(prospect.lastOutboundTextBody!)}
-                                &rdquo;
-                              </p>
-                            ) : stackQuoteYouPlain ? (
-                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
-                                You texted last.
-                              </p>
-                            ) : stackQuoteThem ? (
-                              <p className="mt-1.5 text-[11px] leading-snug text-slate-500 sm:mt-2 sm:text-xs sm:leading-normal">
-                                &ldquo;{clipCtx(prospect.lastInboundBody!)}&rdquo;
-                              </p>
-                            ) : null}
-                            {isGenerating === prospect.id ? (
-                              <p className="mt-1.5 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-amber-400/85 sm:mt-2">
-                                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin" aria-hidden />
-                                Regenerating draft
-                              </p>
-                            ) : null}
-                            <div className="mt-2 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:gap-3">
-                              <p className="min-w-0 flex-1 text-sm leading-relaxed text-[var(--rm-text)]">
-                                <span className="text-[1.05em]">{currentDraft}</span>
-                              </p>
-                              <div className="flex shrink-0 flex-col items-end gap-1.5" data-stack-card-stop>
-                                <div className="flex max-w-full flex-row flex-wrap justify-end gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleGenerateDraft(prospect, { regenerate: true })}
-                                    disabled={isGenerating === prospect.id || regenBlocked}
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 disabled:pointer-events-none disabled:opacity-30"
-                                    title={
-                                      !isPro && draftId
-                                        ? "Regenerating requires Pro — free tier is one initial draft"
-                                        : regenBlocked
-                                          ? `Pro: ${PRO_REGEN_LIMIT} regenerations per draft — Elite is unlimited`
-                                          : "Regenerate draft"
-                                    }
-                                    aria-label="Regenerate draft"
-                                  >
-                                    <RefreshCw
-                                      size={15}
-                                      strokeWidth={1.35}
-                                      className={isGenerating === prospect.id ? "animate-spin" : ""}
-                                    />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const body = encodeURIComponent(currentDraft);
-                                      const urlH =
-                                        prospect.phoneNumber
-                                          ? `sms:${prospect.phoneNumber}?body=${body}`
-                                          : `sms:?body=${body}`;
-                                      window.location.href = urlH;
-                                    }}
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100"
-                                    title="Open Messages with this draft"
-                                    aria-label="Open Messages with draft"
-                                  >
-                                    <MessageSquare size={15} strokeWidth={1.25} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleTouchedBase(prospect, currentDraft)}
-                                    disabled={quickTouchingId === prospect.id}
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100 active:scale-95 disabled:pointer-events-none disabled:opacity-30"
-                                    title="Log chat — touched base & hide card"
-                                    aria-label="Log chat"
-                                  >
-                                    {quickTouchingId === prospect.id ? (
-                                      <RefreshCw size={14} strokeWidth={1.35} className="animate-spin" />
-                                    ) : (
-                                      <ThumbsUp size={15} strokeWidth={1.2} />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => shareDraftText(currentDraft, prospect.name, prospect.id)}
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700/45 bg-slate-950/35 text-slate-400 transition hover:border-slate-500/55 hover:bg-slate-800/55 hover:text-slate-100"
-                                    title="Copy & share draft"
-                                    aria-label="Copy and share draft"
-                                  >
-                                    <Share size={15} strokeWidth={1.2} />
-                                  </button>
-                                </div>
-                                {isPro && !isElite && draftId ? (
-                                  <span className="text-right text-[8px] uppercase tracking-[0.08em] text-slate-500">
-                                    {regenUsed}/{PRO_REGEN_LIMIT} regens
-                                  </span>
-                                ) : null}
-                                {shareTip?.prospectId === prospect.id ? (
-                                  <p className="max-w-[14rem] text-right text-[9px] leading-snug text-emerald-400/90">
-                                    {shareTip.message}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="mt-1.5 space-y-2 sm:mt-2">
-                            {hasStackContextQuote ? (
-                              <div className="flex items-start gap-2">
-                                <p className="min-w-0 flex-1 text-[11px] leading-snug text-slate-500 sm:text-xs sm:leading-normal">
-                                  {stackQuoteYou ? (
-                                    <>
-                                      <span className="text-slate-600">You · </span>
-                                      &ldquo;{clipCtx(prospect.lastOutboundTextBody!)}&rdquo;
-                                    </>
-                                  ) : stackQuoteYouPlain ? (
-                                    "You texted last."
-                                  ) : (
-                                    <>&ldquo;{clipCtx(prospect.lastInboundBody!)}&rdquo;</>
-                                  )}
-                                </p>
-                                {prospect.phoneNumber ? (
-                                  <span className="shrink-0" data-stack-card-stop>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        window.location.href = prospect.phoneNumber
-                                          ? `sms:${prospect.phoneNumber}`
-                                          : "sms:";
-                                      }}
-                                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
-                                      title="Open Messages"
-                                      aria-label="Open Messages"
-                                    >
-                                      <MessageSquare size={13} strokeWidth={1.25} />
-                                    </button>
-                                  </span>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {generatingNoDraft ? (
-                              <p className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-amber-400/85 sm:mt-1.5">
-                                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin" aria-hidden />
-                                Generating draft
-                              </p>
-                            ) : null}
-                            <div className="flex flex-wrap items-center gap-2" data-stack-card-stop>
-                              {!isPro && draftsEverGenerated >= FREE_AI_DRAFTS ? (
-                                <button
-                                  type="button"
-                                  onClick={() => { setPaywallFeature("AI drafts"); setShowPaywall(true); }}
-                                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text-muted)]/60 transition hover:border-emerald-500/40 hover:text-emerald-400"
-                                >
-                                  <Lock size={10} strokeWidth={1.5} />
-                                  Generate
-                                  <span className="text-[8px] text-emerald-400/80">Pro</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleGenerateDraft(prospect)}
-                                  disabled={generatingNoDraft}
-                                  className="inline-flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-[9px] uppercase tracking-[0.22em] text-[var(--rm-text)] transition hover:border-[var(--rm-text)] disabled:opacity-50"
-                                >
-                                  {generatingNoDraft ? (
-                                    <>
-                                      <Loader2
-                                        size={12}
-                                        strokeWidth={2}
-                                        className="shrink-0 animate-spin text-[var(--rm-text-muted)]"
-                                        aria-hidden
-                                      />
-                                      <span>Generating</span>
-                                    </>
-                                  ) : (
-                                    "Generate"
-                                  )}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleTouchedBase(prospect)}
-                                disabled={quickTouchingId === prospect.id}
-                                className="inline-flex items-center gap-1 rounded-full border border-slate-600/45 bg-slate-950/20 py-1 pl-1.5 pr-2 text-slate-500 transition hover:border-slate-500/55 hover:bg-slate-900/35 hover:text-slate-300 active:scale-[0.98] disabled:opacity-35"
-                                title="Log chat — touched base & hide card"
-                                aria-label="Log chat"
-                              >
-                                {quickTouchingId === prospect.id ? (
-                                  <RefreshCw size={12} className="animate-spin" strokeWidth={1.35} />
-                                ) : (
-                                  <>
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/40 bg-slate-900/50">
-                                      <ThumbsUp size={12} strokeWidth={1.2} />
-                                    </span>
-                                    <span className="text-[8px] font-medium uppercase tracking-[0.2em]">LOG CHAT</span>
-                                  </>
-                                )}
-                              </button>
-                              {!hasStackContextQuote && prospect.phoneNumber ? (
-                                <button
-                                  type="button"
-                                  onClick={() => { window.location.href = `sms:${prospect.phoneNumber}`; }}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500/40 transition hover:bg-slate-800/45 hover:text-slate-300"
-                                  title="Open Messages"
-                                  aria-label="Open Messages"
-                                >
-                                  <MessageSquare size={13} strokeWidth={1.25} />
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        prospect={prospect}
+                        currentDraft={currentDraft}
+                        isGenerating={isGenerating === prospect.id}
+                        isDismissing={Boolean(dismissingDraftIds[dismissKey])}
+                        isPro={isPro}
+                        isElite={isElite}
+                        regenUsed={draftId ? (regenByDraftId[draftId] ?? 0) : 0}
+                        regenLimit={PRO_REGEN_LIMIT}
+                        draftsEverGenerated={draftsEverGenerated}
+                        freeDraftLimit={FREE_AI_DRAFTS}
+                        quickTouching={quickTouchingId === prospect.id}
+                        toneId={draftToneByProspect[prospect.id] ?? "balanced"}
+                        onScoreTap={() => setScoreSheetTarget(prospect)}
+                        onGenerate={(regen) => regen ? handleGenerateDraft(prospect, { regenerate: true }) : handleGenerateDraft(prospect)}
+                        onDismiss={() => draftId ? handleDismissCard(prospect, draftId, currentDraft) : handleDismissCard(prospect)}
+                        onTouchedBase={() => handleTouchedBase(prospect, currentDraft)}
+                        onShare={() => shareDraftText(currentDraft, prospect.name)}
+                        onSetTone={(tone) => setDraftToneByProspect((prev) => ({ ...prev, [prospect.id]: tone }))}
+                      />
                     );
                   })}
                 </div>
@@ -1791,82 +441,47 @@ export default function HomePage() {
             );
           })}
         </div>
-      ) : null}
+      )}
 
-      {dismissedDrafts.length > 0 ? (
-        <section className="space-y-3">
-          <button
-            type="button"
-            onClick={() => setDismissedOpen((v) => !v)}
-            className="flex w-full items-center justify-between border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-left text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-          >
-            <span>Hidden cards ({dismissedDrafts.length})</span>
-            <span>{dismissedOpen ? "Hide" : "View"}</span>
+      {/* Hidden cards */}
+      {dismissedDrafts.length > 0 && (
+        <section>
+          <button type="button" onClick={() => setDismissedOpen((v) => !v)} className="w-full rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] px-4 py-3 text-left text-xs text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)]">
+            Hidden ({dismissedDrafts.length}) · {dismissedOpen ? "hide" : "view"}
           </button>
-          {dismissedOpen ? (
-            <div className="space-y-2 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4">
+          {dismissedOpen && (
+            <div className="mt-2 space-y-2">
               {dismissedDrafts.map((draft) => (
-                <div key={draft.id} className="flex items-start justify-between gap-3 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
+                <div key={draft.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold">
-                      {draft.prospectName}
-                      <span className="ml-2 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                        {draft.tier}
-                      </span>
-                    </p>
-                    {draft.text ? (
-                      <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{draft.text}</p>
-                    ) : (
-                      <p className="mt-1 text-xs text-[var(--rm-text-muted)]">Hidden from the main feed.</p>
-                    )}
-                    
+                    <p className="text-sm font-medium">{draft.prospectName} <span className="text-xs text-[var(--rm-text-muted)]">{draft.tier}</span></p>
+                    {draft.text && <p className="mt-0.5 truncate text-xs text-[var(--rm-text-muted)]">{draft.text}</p>}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRestoreDismissed(draft)}
-                    className="shrink-0 border border-slate-800 px-3 py-1.5 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)] transition hover:border-slate-500"
-                  >
+                  <button type="button" onClick={() => handleRestoreDismissed(draft)} className="shrink-0 rounded-full border border-[var(--rm-border)] px-3 py-1.5 text-xs text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)] hover:text-[var(--rm-text)]">
                     Restore
                   </button>
                 </div>
               ))}
             </div>
-          ) : null}
+          )}
         </section>
-      ) : null}
+      )}
 
-      <AskDomoBridge
-        onRequestPro={() => {
-          setPaywallFeature("Ask Domo–style coaching (included with Pro)");
-          setShowPaywall(true);
-        }}
+      {/* Ask Domo */}
+      <AskDomoBridge onRequestPro={() => { setPaywallFeature("Ask Domo coaching (Pro)"); setShowPaywall(true); }} />
+
+      {/* Score sheet */}
+      <ScoreSheet
+        open={Boolean(scoreSheetTarget)}
+        onClose={() => setScoreSheetTarget(null)}
+        name={scoreSheetTarget?.name ?? ""}
+        score={scoreSheetTarget?.momentum ?? 0}
+        tier={scoreSheetTarget?.tier ?? ""}
+        context={scoreSheetTarget?.momentumContext}
       />
 
-      <PaywallModal
-        isOpen={showPaywall}
-        onClose={() => {
-          setShowPaywall(false);
-          setPaywallFeature(undefined);
-        }}
-        feature={paywallFeature}
-      />
+      {/* Paywall */}
+      <PaywallModal isOpen={showPaywall} onClose={() => { setShowPaywall(false); setPaywallFeature(undefined); }} feature={paywallFeature} />
     </div>
   );
-}
-
-function formatRelativeTime(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  if (diffMs < 0) {
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
-  const min = Math.floor(diffMs / 60_000);
-  const hrs = Math.floor(diffMs / 3_600_000);
-  const days = Math.floor(diffMs / 86_400_000);
-  if (min < 1) return "now";
-  if (min < 60) return `${min}m ago`;
-  if (hrs < 24) return `${hrs}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }

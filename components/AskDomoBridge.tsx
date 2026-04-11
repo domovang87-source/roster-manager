@@ -45,22 +45,22 @@ function CoachingTurn({
 }) {
   return (
     <div className="space-y-4 border-t border-[color:var(--rm-border)]/60 pt-5 first:border-t-0 first:pt-0">
-      <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-300/70">Turn {turnIndex + 1}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-300/70">Turn {turnIndex + 1}</p>
       <div>
-        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Diagnosis</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Diagnosis</p>
         <p className="mt-1 text-sm leading-relaxed text-[var(--rm-text)]">{coaching.diagnosis}</p>
       </div>
       <div>
-        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Move</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/90">Move</p>
         <p className="mt-1 text-sm leading-relaxed text-[var(--rm-text-muted)]">{coaching.move}</p>
       </div>
       <div className="rounded-md border border-violet-500/35 bg-violet-950/20 p-3">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-violet-200/90">Text</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-200/90">Text</p>
           <button
             type="button"
             onClick={() => onCopy(turnIndex, coaching.text)}
-            className="inline-flex items-center gap-1 rounded border border-violet-500/40 px-2 py-1 text-[9px] font-medium uppercase tracking-[0.15em] text-violet-100 transition hover:bg-violet-500/15"
+            className="inline-flex items-center gap-1 rounded border border-violet-500/40 px-2 py-1 text-[11px] font-medium uppercase tracking-[0.15em] text-violet-100 transition hover:bg-violet-500/15"
           >
             {copiedIndex === turnIndex ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
             {copiedIndex === turnIndex ? "Copied" : "Copy"}
@@ -70,11 +70,11 @@ function CoachingTurn({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-md border border-[color:var(--rm-border)] bg-[var(--rm-bg)]/80 p-3">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald-400/85">If they go warm</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-400/85">If they go warm</p>
           <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">{coaching.ifTheyReplyWarm}</p>
         </div>
         <div className="rounded-md border border-[color:var(--rm-border)] bg-[var(--rm-bg)]/80 p-3">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-400/85">If they go cold</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-400/85">If they go cold</p>
           <p className="mt-1 text-xs leading-snug text-[var(--rm-text-muted)]">{coaching.ifTheyReplyCold}</p>
         </div>
       </div>
@@ -259,7 +259,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-violet-300/90">Ask Domo · in Stack</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-violet-300/90">Ask Domo · in Stack</p>
           <h2 id={`${inputId}-heading`} className="mt-1 text-sm font-semibold tracking-tight text-[var(--rm-text)]">
             Stuck on a situation?
           </h2>
@@ -273,7 +273,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
           <button
             type="button"
             onClick={resetThread}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--rm-border)] px-3 py-1.5 text-[9px] font-medium uppercase tracking-[0.15em] text-[var(--rm-text-muted)] transition hover:border-violet-500/40 hover:text-[var(--rm-text)]"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--rm-border)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.15em] text-[var(--rm-text-muted)] transition hover:border-violet-500/40 hover:text-[var(--rm-text)]"
           >
             <RotateCcw size={12} aria-hidden />
             New thread
@@ -294,7 +294,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
         className={`mt-4 w-full resize-y rounded-md border border-[color:var(--rm-border)] bg-[var(--rm-bg)] px-3 py-2.5 text-sm leading-relaxed text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/55 focus:border-violet-500/45 focus:outline-none focus:ring-1 focus:ring-violet-500/30 ${threadActive ? "opacity-80" : ""}`}
       />
       {threadActive ? (
-        <p className="mt-1 text-[10px] text-[var(--rm-text-muted)]">
+        <p className="mt-1 text-[11px] text-[var(--rm-text-muted)]">
           Situation is locked for this thread — <button type="button" onClick={resetThread} className="underline underline-offset-2 hover:text-[var(--rm-text)]">New thread</button> to change it.
         </p>
       ) : null}
@@ -352,7 +352,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
             )}
           </>
         ) : (
-          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--rm-border)] px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
             <Loader2 size={12} className="animate-spin" aria-hidden />
             Checking access…
           </span>
@@ -394,14 +394,14 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
       </div>
 
       {checked && !isPro ? (
-        <p className="mt-2 text-[10px] text-[var(--rm-text-muted)]">
+        <p className="mt-2 text-[11px] text-[var(--rm-text-muted)]">
           In-app coaching is a <strong className="text-[var(--rm-text)]">Pro</strong> perk — same frameworks, no second
           subscription. Or use the external site anytime.
         </p>
       ) : null}
 
       {checked && isPro ? (
-        <p className="mt-2 text-[10px] text-[var(--rm-text-muted)]">
+        <p className="mt-2 text-[11px] text-[var(--rm-text-muted)]">
           <strong className="text-[var(--rm-text)]">Open askdomo.ai</strong> anytime if you prefer the standalone chat.
         </p>
       ) : null}
@@ -417,7 +417,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
                     key={`h-${i}`}
                     className="rounded-md border border-[color:var(--rm-border)]/80 bg-[var(--rm-bg)]/60 px-3 py-2.5"
                   >
-                    <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--rm-text-muted)]">
                       Your follow-up
                     </p>
                     <p className="mt-1 text-sm text-[var(--rm-text)]">{entry.content}</p>
@@ -441,7 +441,7 @@ export default function AskDomoBridge({ onRequestPro }: Props) {
 
       {checked && isPro && lastIsAssistant ? (
         <div className="mt-6 border-t border-[color:var(--rm-border)]/60 pt-5">
-          <label htmlFor={followUpId} className="text-[9px] font-semibold uppercase tracking-[0.2em] text-violet-300/85">
+          <label htmlFor={followUpId} className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-300/85">
             Follow-up
           </label>
           <textarea

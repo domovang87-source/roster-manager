@@ -3,9 +3,13 @@
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { DndContext, DragEndEvent, useDraggable, useDroppable } from "@dnd-kit/core";
-import { Clock, Loader2, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { Clock, MessageSquare, Pencil, Trash2, Users } from "lucide-react";
 import ProspectCard from "../../../components/ProspectCard";
 import PaywallModal from "../../../components/PaywallModal";
+import Sheet from "@/components/ui/Sheet";
+import PageHeader from "@/components/ui/PageHeader";
+import EmptyState from "@/components/ui/EmptyState";
+import { useToast } from "@/components/ui/Toast";
 import { FREE_ROSTER_SLOTS, rosterRequiresUpgradeForUi } from "../../../lib/free-tier";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import { useProStatus } from "../../../lib/use-pro-status";
@@ -21,13 +25,6 @@ type Prospect = {
   note?: string;
   tier: Tier;
   phoneNumber?: string;
-};
-
-type SimulationResponse = {
-  tier: Tier;
-  summary?: string;
-  suggestedReply?: string;
-  autoReply?: string;
 };
 
 type MessageItem = {
@@ -50,8 +47,11 @@ const emptyTierMap: Record<Tier, Prospect[]> = {
   C: [],
 };
 
+type FormMode = "add" | "edit";
+
 function RosterPageInner() {
   const searchParams = useSearchParams();
+  const { toast } = useToast();
   const [flashTier, setFlashTier] = React.useState<Tier | null>(null);
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(
     null
@@ -61,28 +61,24 @@ function RosterPageInner() {
   );
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [newName, setNewName] = React.useState("");
-  const [newTier, setNewTier] = React.useState<Tier>("B");
-  const [newPhone, setNewPhone] = React.useState("");
+
+  // Unified form sheet state
+  const [formOpen, setFormOpen] = React.useState(false);
+  const [formMode, setFormMode] = React.useState<FormMode>("add");
+  const [formName, setFormName] = React.useState("");
+  const [formTier, setFormTier] = React.useState<Tier>("B");
+  const [formPhone, setFormPhone] = React.useState("");
+  const [formNote, setFormNote] = React.useState("");
+  const [formProspect, setFormProspect] = React.useState<Prospect | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [isEditOpen, setIsEditOpen] = React.useState(false);
-  const [editingProspect, setEditingProspect] = React.useState<Prospect | null>(
-    null
-  );
-  const [editName, setEditName] = React.useState("");
-  const [editTier, setEditTier] = React.useState<Tier>("B");
-  const [editNote, setEditNote] = React.useState("");
-  const [editPhone, setEditPhone] = React.useState("");
-  const [selectedProspect, setSelectedProspect] = React.useState<Prospect | null>(
-    null
-  );
-  const [incomingText, setIncomingText] = React.useState("");
-  const [responseData, setResponseData] = React.useState<SimulationResponse | null>(
-    null
-  );
-  const [isGenerating, setIsGenerating] = React.useState(false);
+  const [deleteConfirmStep, setDeleteConfirmStep] = React.useState(false);
+  const [deletePhrase, setDeletePhrase] = React.useState("");
+
+  // Detail sheet state
+  const [detailOpen, setDetailOpen] = React.useState(false);
+  const [selectedProspect, setSelectedProspect] = React.useState<Prospect | null>(null);
   const [prospectMessages, setProspectMessages] = React.useState<MessageItem[]>([]);
+
   const [showPaywall, setShowPaywall] = React.useState(false);
   const [paywallFeature, setPaywallFeature] = React.useState<string | undefined>(
     undefined
@@ -90,8 +86,6 @@ function RosterPageInner() {
   const { isPro, checked: subscriptionChecked } = useProStatus();
   const { userId } = useSession();
   const [staleDays, setStaleDays] = React.useState<Record<string, number | null>>({});
-  const [deleteConfirmStep, setDeleteConfirmStep] = React.useState(false);
-  const [deletePhrase, setDeletePhrase] = React.useState("");
 
   React.useEffect(() => {
     const t = searchParams.get("tier");
@@ -110,23 +104,6 @@ function RosterPageInner() {
       window.clearTimeout(clearId);
     };
   }, [searchParams]);
-
-  const rosterCommandAudit = React.useMemo(() => {
-    if (!selectedProspect || selectedProspect.tier !== "C") return null;
-    let ib = 0;
-    let ob = 0;
-    for (const m of prospectMessages) {
-      if (m.direction === "inbound") ib += 1;
-      else if (m.direction === "outbound") ob += 1;
-    }
-    if (ob >= 4 && ob > ib * 2) {
-      const sum = ib + ob;
-      const yourPct = sum > 0 ? Math.round((ob / sum) * 100) : 0;
-      const who = (selectedProspect.name || "They").split(/\s+/)[0] || "They";
-      return `You marked ${who} as C-tier, but ${yourPct}% of what you logged here is your texts / engagement. That’s a lot for the casual column — let them come to you.`;
-    }
-    return null;
-  }, [selectedProspect, prospectMessages]);
 
   React.useEffect(() => {
     const config = getSupabaseConfig();
@@ -301,7 +278,7 @@ function RosterPageInner() {
 
     if (updateError) {
       setTierMap(previousMap);
-      setError("Failed to update tier.");
+      toast("Failed to update tier", "error");
     }
   };
 
@@ -316,30 +293,59 @@ function RosterPageInner() {
     isPro
   );
 
-  const handleNewProspectClick = () => {
+  /* ── Form helpers ── */
+
+  const openAddForm = () => {
     if (!subscriptionChecked) return;
     if (isLoading) return;
     if (freeTierRosterFull) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
     } else {
-      setIsModalOpen(true);
+      setFormMode("add");
+      setFormProspect(null);
+      setFormName("");
+      setFormTier("B");
+      setFormPhone("");
+      setFormNote("");
+      setDeleteConfirmStep(false);
+      setDeletePhrase("");
+      setFormOpen(true);
     }
+  };
+
+  const openEditForm = (prospect: Prospect) => {
+    setFormMode("edit");
+    setFormProspect(prospect);
+    setFormName(prospect.name);
+    setFormTier(prospect.tier);
+    setFormPhone(prospect.phoneNumber ?? "");
+    setFormNote(prospect.note ?? "");
+    setDeleteConfirmStep(false);
+    setDeletePhrase("");
+    setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setFormOpen(false);
+    setFormProspect(null);
+    setDeleteConfirmStep(false);
+    setDeletePhrase("");
   };
 
   const handleCreateProspect = async () => {
     const client = supabaseRef.current;
     if (!client) return;
-    const trimmedName = newName.trim();
+    const trimmedName = formName.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      toast("Name is required", "error");
       return;
     }
     if (!subscriptionChecked) return;
     if (!isPro && totalProspects >= FREE_ROSTER_SLOTS) {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
-      setIsModalOpen(false);
+      closeForm();
       return;
     }
 
@@ -352,8 +358,8 @@ function RosterPageInner() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: trimmedName,
-        tier: newTier,
-        phone_number: newPhone.trim() || null,
+        tier: formTier,
+        phone_number: formPhone.trim() || null,
       }),
     });
     const payload = (await res.json()) as {
@@ -371,14 +377,14 @@ function RosterPageInner() {
     if (res.status === 403 && payload.code === "ROSTER_LIMIT") {
       setPaywallFeature("Unlimited roster");
       setShowPaywall(true);
-      setIsModalOpen(false);
+      closeForm();
       setIsSaving(false);
       return;
     }
 
     if (!res.ok || !payload.data) {
       console.error("Create prospect error:", payload.error, res.status);
-      setError(payload.error ?? "Failed to create prospect.");
+      toast(payload.error ?? "Failed to create prospect", "error");
       setIsSaving(false);
       return;
     }
@@ -387,88 +393,29 @@ function RosterPageInner() {
 
     setTierMap((prev) => ({
       ...prev,
-      [newTier]: [
+      [formTier]: [
         {
           id: String(data.id),
           name: data.name ?? trimmedName,
           note: data.vibe_notes ?? undefined,
-          tier: newTier,
+          tier: formTier,
           phoneNumber: data.phone_number ?? undefined,
         },
-        ...prev[newTier],
+        ...prev[formTier],
       ],
     }));
 
+    toast(`${trimmedName} added to ${formTier}-tier`, "success");
     setIsSaving(false);
-    setIsModalOpen(false);
-    setNewName("");
-    setNewPhone("");
-    setNewTier("B");
-  };
-
-  const handleGenerateResponse = async () => {
-    const client = supabaseRef.current;
-    if (!client || !selectedProspect) return;
-    if (!isPro) {
-      setPaywallFeature("Roster AI simulator");
-      setShowPaywall(true);
-      return;
-    }
-    if (!incomingText.trim()) {
-      setError("Incoming text is required.");
-      return;
-    }
-
-    setIsGenerating(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/generate-response", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tier: selectedProspect.tier,
-          name: selectedProspect.name,
-          vibeNotes: selectedProspect.note ?? "",
-          incomingText,
-        }),
-      });
-
-      const payload = (await res.json()) as SimulationResponse & {
-        error?: string;
-      };
-
-      if (!res.ok || payload.error) {
-        setError(payload.error ?? "Failed to generate response.");
-        setIsGenerating(false);
-        return;
-      }
-
-      setResponseData(payload);
-    } catch {
-      setError("Failed to generate response.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleOpenEdit = (prospect: Prospect) => {
-    setEditingProspect(prospect);
-    setEditName(prospect.name);
-    setEditTier(prospect.tier);
-    setEditNote(prospect.note ?? "");
-    setEditPhone(prospect.phoneNumber ?? "");
-    setDeleteConfirmStep(false);
-    setDeletePhrase("");
-    setIsEditOpen(true);
+    closeForm();
   };
 
   const handleSaveEdit = async () => {
     const client = supabaseRef.current;
-    if (!client || !editingProspect) return;
-    const trimmedName = editName.trim();
+    if (!client || !formProspect) return;
+    const trimmedName = formName.trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      toast("Name is required", "error");
       return;
     }
 
@@ -479,14 +426,14 @@ function RosterPageInner() {
       .from("prospects")
       .update({
         name: trimmedName,
-        tier: editTier,
-        vibe_notes: editNote.trim(),
-        phone_number: editPhone.trim() || null,
+        tier: formTier,
+        vibe_notes: formNote.trim(),
+        phone_number: formPhone.trim() || null,
       })
-      .eq("id", editingProspect.id);
+      .eq("id", formProspect.id);
 
     if (updateError) {
-      setError("Failed to update prospect.");
+      toast("Failed to update prospect", "error");
       setIsSaving(false);
       return;
     }
@@ -494,44 +441,44 @@ function RosterPageInner() {
     setTierMap((prev) => {
       const next = { ...prev };
       (Object.keys(next) as Tier[]).forEach((tier) => {
-        next[tier] = next[tier].filter((p) => p.id !== editingProspect.id);
+        next[tier] = next[tier].filter((p) => p.id !== formProspect.id);
       });
 
-      next[editTier] = [
+      next[formTier] = [
         {
-          ...editingProspect,
+          ...formProspect,
           name: trimmedName,
-          tier: editTier,
-          note: editNote.trim() || undefined,
-          phoneNumber: editPhone.trim() || undefined,
+          tier: formTier,
+          note: formNote.trim() || undefined,
+          phoneNumber: formPhone.trim() || undefined,
         },
-        ...next[editTier],
+        ...next[formTier],
       ];
 
       return next;
     });
 
-    if (selectedProspect?.id === editingProspect.id) {
+    if (selectedProspect?.id === formProspect.id) {
       setSelectedProspect({
         ...selectedProspect,
         name: trimmedName,
-        tier: editTier,
-        note: editNote.trim() || undefined,
-        phoneNumber: editPhone.trim() || undefined,
+        tier: formTier,
+        note: formNote.trim() || undefined,
+        phoneNumber: formPhone.trim() || undefined,
       });
     }
 
+    toast("Changes saved", "success");
     setIsSaving(false);
-    setIsEditOpen(false);
-    setEditingProspect(null);
+    closeForm();
   };
 
   const handleDeleteProspect = async () => {
-    const prospect = editingProspect;
+    const prospect = formProspect;
     const client = supabaseRef.current;
     if (!client || !prospect) return;
     if (deletePhrase.trim().toLowerCase() !== "delete") {
-      setError('Type the word "delete" to confirm removal.');
+      toast('Type the word "delete" to confirm removal', "error");
       return;
     }
 
@@ -542,7 +489,7 @@ function RosterPageInner() {
       .eq("id", prospect.id);
 
     if (deleteError) {
-      setError("Failed to delete prospect.");
+      toast("Failed to delete prospect", "error");
       return;
     }
 
@@ -553,50 +500,69 @@ function RosterPageInner() {
 
     if (selectedProspect?.id === prospect.id) {
       setSelectedProspect(null);
+      setDetailOpen(false);
     }
 
-    setDeleteConfirmStep(false);
-    setDeletePhrase("");
-    setIsEditOpen(false);
-    setEditingProspect(null);
+    toast(`${prospect.name} removed`, "neutral");
+    closeForm();
   };
+
+  const handleFormSubmit = () => {
+    if (formMode === "add") {
+      void handleCreateProspect();
+    } else {
+      void handleSaveEdit();
+    }
+  };
+
+  /* ── Detail sheet helpers ── */
+
+  const openDetail = (prospect: Prospect) => {
+    setSelectedProspect(prospect);
+    setDetailOpen(true);
+  };
+
+  const closeDetail = () => {
+    setDetailOpen(false);
+    setSelectedProspect(null);
+  };
+
+  const messageCount = prospectMessages.length;
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-wide">People you&apos;re texting</h1>
-          <p className="text-sm text-[var(--rm-text-muted)]">
-            Drag cards between A, B, and C. A = most important, C = casual.
-          </p>
-          {!isPro ? (
-            <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]/90">
-              Free: 1 person on roster · 1 AI draft on Home · Pulse metrics · upgrade for unlimited
-            </p>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          onClick={handleNewProspectClick}
-          disabled={isLoading}
-          className={`border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-50 ${
-            freeTierRosterFull
-              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200/95 hover:border-emerald-400/70"
-              : "border-[var(--rm-border)] hover:border-[var(--rm-text)]"
-          }`}
-        >
-          {freeTierRosterFull ? "Upgrade · more roster" : "Add person"}
-        </button>
-      </header>
+      <PageHeader
+        title="People you're texting"
+        subtitle="Drag cards between A, B, and C. A = most important, C = casual."
+        eyebrow={
+          !isPro
+            ? "Free: 1 person · 1 AI draft · Pulse metrics · upgrade for unlimited"
+            : undefined
+        }
+        action={
+          <button
+            type="button"
+            onClick={openAddForm}
+            disabled={isLoading}
+            className={`rounded-lg border px-4 py-2 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              freeTierRosterFull
+                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200/95 hover:border-emerald-400/70"
+                : "border-[var(--rm-border)] text-[var(--rm-text)] hover:border-[var(--rm-text)]"
+            }`}
+          >
+            {freeTierRosterFull ? "Upgrade · more roster" : "Add person"}
+          </button>
+        }
+      />
 
-      {error ? (
-        <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 text-sm text-[var(--rm-text-muted)]">
+      {error && (
+        <div className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 text-sm text-[var(--rm-text-muted)]">
           {error}
         </div>
-      ) : null}
+      )}
 
       <DndContext onDragEnd={handleDragEnd}>
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="flex flex-col gap-4">
           {tierOrder.map((tier) => (
             <TierColumn
               key={tier}
@@ -606,398 +572,233 @@ function RosterPageInner() {
               highlight={flashTier === tier}
             >
               {isLoading ? (
-                <div className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  Loading...
-                </div>
-              ) : null}
-              {tierMap[tier].map((prospect) => (
-                <DraggableProspect
-                  key={prospect.id}
-                  tier={tier}
-                  prospect={prospect}
-                  isSelected={selectedProspect?.id === prospect.id}
-                  staleDayCount={staleDays[prospect.id] ?? null}
-                  onSelect={() => {
-                    setSelectedProspect(prospect);
-                    setResponseData(null);
-                  }}
-                  onEdit={() => handleOpenEdit(prospect)}
-                />
-              ))}
+                <p className="label text-[var(--rm-text-muted)]">Loading…</p>
+              ) : tierMap[tier].length === 0 ? (
+                <p className="py-6 text-center text-sm text-[var(--rm-text-muted)]">
+                  No one here yet
+                </p>
+              ) : (
+                tierMap[tier].map((prospect) => (
+                  <DraggableProspect
+                    key={prospect.id}
+                    tier={tier}
+                    prospect={prospect}
+                    isSelected={selectedProspect?.id === prospect.id}
+                    staleDayCount={staleDays[prospect.id] ?? null}
+                    onSelect={() => openDetail(prospect)}
+                    onEdit={() => openEditForm(prospect)}
+                  />
+                ))
+              )}
             </TierColumn>
           ))}
         </div>
       </DndContext>
 
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
-                New Prospect
-              </h2>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-              >
-                Close
-              </button>
-            </div>
+      {/* Empty state when no prospects at all */}
+      {!isLoading && totalProspects === 0 && !error && (
+        <EmptyState
+          icon={Users}
+          headline="Your roster is empty"
+          body="Add someone to start tracking your conversations and texting cadence."
+        />
+      )}
 
-            <div className="mt-4 space-y-4">
-              <label className="flex flex-col gap-2 text-sm">
-                Name
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                  placeholder="Enter name"
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                />
-              </label>
+      {/* ── Unified add / edit Sheet ── */}
+      <Sheet
+        open={formOpen}
+        onClose={closeForm}
+        title={formMode === "add" ? "New person" : "Edit person"}
+      >
+        <div className="space-y-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="label text-[var(--rm-text-muted)]">Name</span>
+            <input
+              type="text"
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              placeholder="Enter name"
+              className="h-10 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+            />
+          </label>
 
-              <label className="flex flex-col gap-2 text-sm">
-                Phone
-                <input
-                  type="tel"
-                  value={newPhone}
-                  onChange={(event) => setNewPhone(event.target.value)}
-                  placeholder="+1 555 123 4567"
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                />
-              </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="label text-[var(--rm-text-muted)]">Phone</span>
+            <input
+              type="tel"
+              value={formPhone}
+              onChange={(e) => setFormPhone(e.target.value)}
+              placeholder="+1 555 123 4567"
+              className="h-10 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+            />
+          </label>
 
-              <label className="flex flex-col gap-2 text-sm">
-                Starting tier
-                <select
-                  value={newTier}
-                  onChange={(event) => setNewTier(event.target.value as Tier)}
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                >
-                  {tierOrder.map((tier) => (
-                    <option key={tier} value={tier}>
-                      {tierLabels[tier]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="label text-[var(--rm-text-muted)]">
+              {formMode === "add" ? "Starting tier" : "Tier"}
+            </span>
+            <select
+              value={formTier}
+              onChange={(e) => setFormTier(e.target.value as Tier)}
+              className="h-10 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
+            >
+              {tierOrder.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tierLabels[tier]}
+                </option>
+              ))}
+            </select>
+          </label>
 
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateProspect}
-                disabled={isSaving}
-                className="min-h-11 w-full border border-[var(--rm-text)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-              >
-                {isSaving ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
+          {formMode === "edit" && (
+            <label className="flex flex-col gap-1.5">
+              <span className="label text-[var(--rm-text-muted)]">
+                Vibe notes (context for AI + audit)
+              </span>
+              <textarea
+                value={formNote}
+                onChange={(e) => setFormNote(e.target.value)}
+                rows={4}
+                className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 py-2 text-sm text-[var(--rm-text)]"
+              />
+            </label>
+          )}
         </div>
-      ) : null}
 
-      {isEditOpen && editingProspect ? (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 px-4 pb-6 pt-10 sm:items-center sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="max-h-[min(92dvh,100vh-2rem)] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">
-                Edit Prospect
-              </h2>
+        {/* Delete confirmation (edit mode only) */}
+        {formMode === "edit" && deleteConfirmStep && formProspect && (
+          <div className="mt-5 space-y-3 rounded-lg border border-rose-900/40 bg-rose-950/20 p-4">
+            <p className="text-xs leading-relaxed text-rose-200/90">
+              This permanently removes{" "}
+              <span className="font-medium text-rose-100">{formProspect.name}</span>{" "}
+              from your roster. Their messages and AI drafts are deleted with them.
+              This cannot be undone.
+            </p>
+            <label className="flex flex-col gap-1.5">
+              <span className="label text-rose-200/65">Type delete to confirm</span>
+              <input
+                type="text"
+                value={deletePhrase}
+                onChange={(e) => setDeletePhrase(e.target.value)}
+                placeholder="delete"
+                autoComplete="off"
+                className="h-10 rounded-lg border border-rose-900/50 bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40"
+              />
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  setIsEditOpen(false);
-                  setEditingProspect(null);
                   setDeleteConfirmStep(false);
                   setDeletePhrase("");
                 }}
-                className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
+                className="min-h-[42px] w-full rounded-lg border border-[var(--rm-border)] px-4 py-2.5 text-[11px] font-medium text-[var(--rm-text-muted)] sm:w-auto"
               >
-                Close
+                Back
               </button>
-            </div>
-
-            <div className="mt-4 space-y-4">
-              <label className="flex flex-col gap-2 text-sm">
-                Name
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(event) => setEditName(event.target.value)}
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm">
-                Tier
-                <select
-                  value={editTier}
-                  onChange={(event) => setEditTier(event.target.value as Tier)}
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                >
-                  {tierOrder.map((tier) => (
-                    <option key={tier} value={tier}>
-                      {tierLabels[tier]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm">
-                Phone
-                <input
-                  type="tel"
-                  value={editPhone}
-                  onChange={(event) => setEditPhone(event.target.value)}
-                  placeholder="+1 555 123 4567"
-                  className="h-10 border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)]"
-                />
-              </label>
-
-              <label className="flex flex-col gap-2 text-sm">
-                Vibe notes (context for AI + audit)
-                <textarea
-                  value={editNote}
-                  onChange={(event) => setEditNote(event.target.value)}
-                  rows={4}
-                  className="border border-[var(--rm-border)] bg-[var(--rm-bg)] px-3 py-2 text-sm text-[var(--rm-text)]"
-                />
-              </label>
-            </div>
-
-            {deleteConfirmStep ? (
-              <div className="mt-6 space-y-3 rounded border border-rose-900/40 bg-rose-950/20 p-4">
-                <p className="text-xs leading-relaxed text-rose-200/90">
-                  This permanently removes{" "}
-                  <span className="font-medium text-rose-100">{editingProspect.name}</span> from your roster.
-                  Their messages and AI drafts are deleted with them. This cannot be undone.
-                </p>
-                <label className="flex flex-col gap-1.5 text-[10px] uppercase tracking-[0.25em] text-rose-200/65">
-                  Type delete to confirm
-                  <input
-                    type="text"
-                    value={deletePhrase}
-                    onChange={(event) => setDeletePhrase(event.target.value)}
-                    placeholder="delete"
-                    autoComplete="off"
-                    className="h-10 border border-rose-900/50 bg-[var(--rm-bg)] px-3 text-sm text-[var(--rm-text)] placeholder:text-[var(--rm-text-muted)]/40"
-                  />
-                </label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeleteConfirmStep(false);
-                      setDeletePhrase("");
-                    }}
-                    className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteProspect()}
-                    disabled={deletePhrase.trim().toLowerCase() !== "delete"}
-                    className="min-h-11 w-full border border-rose-700/60 bg-rose-950/40 px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-rose-200 transition hover:border-rose-600 hover:bg-rose-950/55 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
-                  >
-                    Permanently delete
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            <div
-              className={`mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 ${deleteConfirmStep ? "sm:justify-end" : "sm:justify-between"}`}
-            >
-              {!deleteConfirmStep ? (
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirmStep(true)}
-                  className="flex min-h-11 w-full items-center justify-center gap-1.5 border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto sm:justify-start"
-                >
-                  <Trash2 size={12} strokeWidth={1.25} />
-                  Delete
-                </button>
-              ) : null}
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end sm:gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEditOpen(false);
-                    setEditingProspect(null);
-                    setDeleteConfirmStep(false);
-                    setDeletePhrase("");
-                  }}
-                  className="min-h-11 w-full border border-[var(--rm-border)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)] sm:w-auto"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEdit}
-                  disabled={isSaving}
-                  className="min-h-11 w-full border border-[var(--rm-text)] px-4 py-2.5 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                >
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {selectedProspect ? (
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-[var(--rm-border)] bg-[var(--rm-bg)]/95 backdrop-blur">
-          <div className="flex h-full flex-col overflow-hidden p-4 pb-8 sm:p-6 sm:pb-10">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-[var(--rm-text-muted)]">
-                  Conversation Simulator
-                </p>
-                <h2 className="mt-2 text-xl font-semibold tracking-wide">
-                  {selectedProspect.name}
-                </h2>
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  {tierLabels[selectedProspect.tier]}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {selectedProspect.phoneNumber ? (
-                  <a
-                    href={`sms:${selectedProspect.phoneNumber}`}
-                    className="flex items-center gap-2 border border-[var(--rm-border)] px-3 py-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text)]"
-                  >
-                    <MessageSquare size={14} strokeWidth={1.25} />
-                    Text
-                  </a>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => setSelectedProspect(null)}
-                  className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-1 flex-col gap-4 overflow-y-auto text-sm">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                  Vibe notes · command context
-                </p>
-                <p className="text-sm text-[var(--rm-text)]">
-                  {selectedProspect.note || "No notes yet."}
-                </p>
-                {rosterCommandAudit ? (
-                  <p className="border border-amber-500/35 bg-amber-950/20 px-3 py-2 text-xs leading-snug text-amber-100/90">
-                    <span className="font-semibold uppercase tracking-[0.15em] text-amber-400/95">Heads up · </span>
-                    {rosterCommandAudit}
-                  </p>
-                ) : null}
-              </div>
-
-              {prospectMessages.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    Message History
-                  </p>
-                  <div className="max-h-48 space-y-2 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3">
-                    {prospectMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`text-xs ${
-                          msg.direction === "inbound"
-                            ? "text-[var(--rm-text-muted)]"
-                            : "text-[var(--rm-text)]"
-                        }`}
-                      >
-                        <span className="text-[10px] uppercase tracking-[0.2em]">
-                          {msg.direction}
-                        </span>
-                        <span className="ml-2">
-                          {new Date(msg.created_at).toLocaleString()}
-                        </span>
-                        <p className="mt-1">{msg.body}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <label className="flex flex-col gap-2 text-sm">
-                Incoming Text (simulate)
-                <textarea
-                  value={incomingText}
-                  onChange={(event) => setIncomingText(event.target.value)}
-                  rows={6}
-                  placeholder="Paste the incoming message..."
-                  className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3 text-sm text-[var(--rm-text)]"
-                />
-              </label>
-
               <button
                 type="button"
-                onClick={handleGenerateResponse}
-                disabled={isGenerating}
-                className={`inline-flex items-center justify-center gap-2 border px-4 py-2 text-xs uppercase tracking-[0.3em] transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  !isPro
-                    ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-100/90 hover:border-emerald-400/60"
-                    : "border-[var(--rm-text)] hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
-                }`}
+                onClick={() => void handleDeleteProspect()}
+                disabled={deletePhrase.trim().toLowerCase() !== "delete"}
+                className="min-h-[42px] w-full rounded-lg border border-rose-700/60 bg-rose-950/40 px-4 py-2.5 text-[11px] font-medium text-rose-200 transition hover:border-rose-600 hover:bg-rose-950/55 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
               >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={2} aria-hidden />
-                    Generating…
-                  </>
-                ) : !isPro ? (
-                  "Unlock AI · Pro"
-                ) : (
-                  "Generate Response"
-                )}
+                Permanently delete
               </button>
-
-              {responseData ? (
-                <div className="space-y-3 border-t border-[var(--rm-border)] pt-4">
-                  {selectedProspect.tier === "A" ? (
-                    <>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                          Summary
-                        </p>
-                        <p className="mt-2 text-sm">{responseData.summary}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                          Suggested Reply
-                        </p>
-                        <p className="mt-2 text-sm">{responseData.suggestedReply}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                        Auto-Reply
-                      </p>
-                      <p className="mt-2 text-sm">{responseData.autoReply}</p>
-                    </div>
-                  )}
-                </div>
-              ) : null}
             </div>
           </div>
+        )}
+
+        {/* Action buttons */}
+        <div
+          className={`mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 ${
+            formMode === "edit" && !deleteConfirmStep
+              ? "sm:justify-between"
+              : "sm:justify-end"
+          }`}
+        >
+          {formMode === "edit" && !deleteConfirmStep && (
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmStep(true)}
+              className="flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--rm-border)] px-4 py-2.5 text-[11px] font-medium text-[var(--rm-text-muted)] sm:w-auto sm:justify-start"
+            >
+              <Trash2 size={12} strokeWidth={1.25} />
+              Delete
+            </button>
+          )}
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end sm:gap-2">
+            <button
+              type="button"
+              onClick={closeForm}
+              className="min-h-[42px] w-full rounded-lg border border-[var(--rm-border)] px-4 py-2.5 text-[11px] font-medium text-[var(--rm-text-muted)] sm:w-auto"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleFormSubmit}
+              disabled={isSaving}
+              className="min-h-[42px] w-full rounded-lg border border-[var(--rm-text)] px-4 py-2.5 text-[11px] font-medium transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {isSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
-      ) : null}
+      </Sheet>
+
+      {/* ── Person detail Sheet ── */}
+      <Sheet
+        open={detailOpen}
+        onClose={closeDetail}
+        title={selectedProspect?.name}
+      >
+        {selectedProspect && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="label rounded-md bg-[var(--rm-bg)] px-2 py-0.5 text-[var(--rm-text-muted)]">
+                {tierLabels[selectedProspect.tier]}
+              </span>
+              {selectedProspect.phoneNumber && (
+                <a
+                  href={`sms:${selectedProspect.phoneNumber}`}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--rm-border)] px-2.5 py-1 text-[11px] font-medium text-[var(--rm-text)]"
+                >
+                  <MessageSquare size={12} strokeWidth={1.25} />
+                  Text
+                </a>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <p className="label text-[var(--rm-text-muted)]">Vibe notes</p>
+              <p className="text-sm text-[var(--rm-text)]">
+                {selectedProspect.note || "No notes yet."}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <p className="label text-[var(--rm-text-muted)]">Messages</p>
+              <p className="text-sm text-[var(--rm-text)]">
+                {messageCount === 0
+                  ? "No messages logged"
+                  : `${messageCount} message${messageCount !== 1 ? "s" : ""} logged`}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                closeDetail();
+                openEditForm(selectedProspect);
+              }}
+              className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg border border-[var(--rm-text)] px-4 py-2.5 text-[11px] font-medium transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
+            >
+              <Pencil size={12} strokeWidth={1.25} />
+              Edit
+            </button>
+          </div>
+        )}
+      </Sheet>
 
       <PaywallModal
         isOpen={showPaywall}
@@ -1044,7 +845,7 @@ function TierColumn({
     <div
       id={`roster-tier-${tier}`}
       ref={setNodeRef}
-      className={`min-h-[320px] border bg-[var(--rm-bg-elevated)] p-3 transition-[box-shadow] duration-300 ${
+      className={`min-h-[180px] rounded-lg border bg-[var(--rm-bg-elevated)] p-4 transition-[box-shadow] duration-300 ${
         isPriority
           ? "border-[#d2b36a] shadow-[0_0_20px_rgba(210,179,106,0.15)]"
           : "border-[var(--rm-border)]"
@@ -1052,13 +853,13 @@ function TierColumn({
         highlight ? "ring-2 ring-amber-400/70 ring-offset-2 ring-offset-[var(--rm-bg)]" : ""
       }`}
     >
-      <div className="flex items-center justify-between">
-        <span className={`text-sm font-semibold tracking-[0.3em] ${tier === "A" ? "text-amber-400/95" : "text-[var(--rm-text)]"}`}>{label}</span>
-        <span className="text-[10px] uppercase text-[var(--rm-text-muted)]">
-          {tier}
+      <div className="mb-3 flex items-center justify-between">
+        <span className={`label ${tier === "A" ? "text-amber-400/95" : "text-[var(--rm-text)]"}`}>
+          {label}
         </span>
+        <span className="label text-[var(--rm-text-muted)]">{tier}</span>
       </div>
-      <div className="mt-3 flex flex-col gap-3">{children}</div>
+      <div className="flex flex-col gap-3">{children}</div>
     </div>
   );
 }
@@ -1100,7 +901,7 @@ function DraggableProspect({
       ref={setNodeRef}
       style={style}
       onClick={onSelect}
-      className={`${isDragging ? "opacity-60" : ""} ${
+      className={`cursor-pointer rounded-lg ${isDragging ? "opacity-60" : ""} ${
         isSelected ? "ring-1 ring-[var(--rm-text)]" : ""
       }`}
       {...listeners}
@@ -1111,27 +912,25 @@ function DraggableProspect({
         note={prospect.note}
         badge={
           staleLabel ? (
-            <span className="flex items-center gap-1 text-[10px] text-amber-400/80">
+            <span className="flex items-center gap-1 text-[11px] text-amber-400/80">
               <Clock size={10} strokeWidth={1.5} />
               {staleLabel}
             </span>
           ) : null
         }
         actions={
-          <>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit();
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-              className="flex items-center border border-[var(--rm-border)] px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--rm-text-muted)]"
-              aria-label="Edit prospect"
-            >
-              <Pencil size={12} strokeWidth={1.25} />
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEdit();
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="flex items-center rounded border border-[var(--rm-border)] px-2 py-1 text-[11px] text-[var(--rm-text-muted)]"
+            aria-label="Edit prospect"
+          >
+            <Pencil size={12} strokeWidth={1.25} />
+          </button>
         }
       />
     </div>

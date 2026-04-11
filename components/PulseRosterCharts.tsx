@@ -78,7 +78,7 @@ function SocialEquityStyleInfo() {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="mt-5 w-full rounded-md border border-[var(--rm-border)] py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)]/50 hover:text-[var(--rm-text)]"
+              className="mt-5 w-full rounded-md border border-[var(--rm-border)] py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)]/50 hover:text-[var(--rm-text)]"
             >
               Close
             </button>
@@ -155,14 +155,14 @@ export function SocialEquityPanel({
           <button
             type="button"
             onClick={() => setWin("7d")}
-            className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-1 text-[9px] font-medium uppercase tracking-[0.14em] text-amber-100/95 transition"
+            className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-amber-100/95 transition"
           >
             Last 7 days
           </button>
           <button
             type="button"
             onClick={() => setWin("all")}
-            className="rounded-full border border-[var(--rm-border)] px-3 py-1 text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)]/50"
+            className="rounded-full border border-[var(--rm-border)] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--rm-text-muted)] transition hover:border-[var(--rm-text-muted)]/50"
           >
             All logged
           </button>
@@ -183,7 +183,7 @@ export function SocialEquityPanel({
             <button
               type="button"
               onClick={() => setWin("7d")}
-              className={`rounded-full border px-3 py-1 text-[9px] font-medium uppercase tracking-[0.14em] transition ${
+              className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] transition ${
                 win === "7d"
                   ? "border-amber-500/50 bg-amber-500/10 text-amber-100/95"
                   : "border-[var(--rm-border)] text-[var(--rm-text-muted)] hover:border-[var(--rm-text-muted)]/50"
@@ -194,7 +194,7 @@ export function SocialEquityPanel({
             <button
               type="button"
               onClick={() => setWin("all")}
-              className={`rounded-full border px-3 py-1 text-[9px] font-medium uppercase tracking-[0.14em] transition ${
+              className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] transition ${
                 win === "all"
                   ? "border-amber-500/50 bg-amber-500/10 text-amber-100/95"
                   : "border-[var(--rm-border)] text-[var(--rm-text-muted)] hover:border-[var(--rm-text-muted)]/50"
@@ -212,7 +212,7 @@ export function SocialEquityPanel({
           <SocialEquityStyleInfo />
         </div>
       )}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] text-[var(--rm-text-muted)]">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--rm-text-muted)]">
         <span className="inline-flex items-center gap-1">
           <span className="h-1.5 w-1.5 shrink-0 rounded-[1px] bg-violet-500/75" aria-hidden />
           Their texts
@@ -236,19 +236,19 @@ export function SocialEquityPanel({
             >
               <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
                 <div className="min-w-0">
-                  <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Contact</p>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Contact</p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] font-semibold tracking-tight text-[var(--rm-text)]">
-                    <span className={`shrink-0 font-mono text-[10px] font-bold ${tierDot}`}>{r.tier}</span>
+                    <span className={`shrink-0 font-mono text-[11px] font-bold ${tierDot}`}>{r.tier}</span>
                     <span className="truncate">{r.name}</span>
                     {r.energyLeak ? (
-                      <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.1em] text-amber-200/95">
+                      <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-amber-200/95">
                         Energy leak
                       </span>
                     ) : null}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-[8px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Their read</p>
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--rm-text-muted)]">Their read</p>
                   <p
                     className="mt-0.5 text-[11px] font-medium text-[var(--rm-text)]"
                     title="Their side of the thread in your log — asymmetry, not mind-reading. Tap i for definitions."
@@ -269,7 +269,7 @@ export function SocialEquityPanel({
                   title={`Your texts / engagement · ${r.outbound} logged`}
                 />
               </div>
-              <div className="mt-1.5 flex justify-between gap-2 font-mono text-[9px] tabular-nums text-[var(--rm-text-muted)]">
+              <div className="mt-1.5 flex justify-between gap-2 font-mono text-[11px] tabular-nums text-[var(--rm-text-muted)]">
                 <span>
                   Their texts <span className="text-violet-300/90">{r.inbound}</span>
                 </span>

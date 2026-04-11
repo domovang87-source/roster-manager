@@ -1,15 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  /* Dark plum canvas: near-black with violet undertone — cards sit clearly above it */
   --rm-bg: #070509;
   --rm-bg-elevated: #141018;
-  /* Mauve-tinted stroke: lighter than old #3d2844 so borders read on dark purple */
   --rm-border: #534458;
   --rm-border-soft: rgba(190, 170, 210, 0.14);
   --rm-text: #f7f5fa;
   --rm-text-muted: #c4bccf;
-  /* Plum / magenta accents — slightly lifted for contrast on darker base */
   --rm-accent: #c94d8a;
   --rm-accent-muted: #a84378;
   --rm-accent-deep: #5c2845;
@@ -18,7 +15,6 @@
   --rm-alert-muted: rgba(251, 191, 36, 0.14);
 }
 
-/* Neutral — zinc-style dark, no purple cast */
 html[data-rm-theme="ink"] {
   --rm-bg: #09090b;
   --rm-bg-elevated: #18181b;
@@ -34,7 +30,6 @@ html[data-rm-theme="ink"] {
   --rm-alert-muted: rgba(251, 191, 36, 0.12);
 }
 
-/* Deep slate blue */
 html[data-rm-theme="blue"] {
   --rm-bg: #070d16;
   --rm-bg-elevated: #0f172a;
@@ -62,7 +57,7 @@ html[data-rm-theme="blue"] {
 }
 
 html {
-  font-size: 90%;
+  font-size: 100%;
 }
 
 body {
@@ -71,6 +66,14 @@ body {
   background: var(--rm-bg);
   color: var(--rm-text);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Reusable micro-label: uppercase section/field labels */
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .rm-welcome {
@@ -85,28 +88,14 @@ body {
 }
 
 @keyframes rmWelcome {
-  0% {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-  15% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-  }
+  0% { opacity: 0; transform: scale(0.98); }
+  15% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; }
 }
 
 @keyframes rmReveal {
-  0% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 .rm-fade-out {
@@ -114,12 +103,6 @@ body {
 }
 
 @keyframes rmFadeOut {
-  0% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(6px); }
 }

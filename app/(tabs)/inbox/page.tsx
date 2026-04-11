@@ -2,7 +2,10 @@
 
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { MessageSquare, Heart, StickyNote, Plus, Calendar, ImagePlus, X, Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  MessageSquare, Heart, StickyNote, Plus, Calendar,
+  ImagePlus, Loader2, Pencil, Trash2,
+} from "lucide-react";
 import { getSupabaseClient, getSupabaseConfig } from "../../../lib/supabase/client";
 import {
   parseDatetimeLocalToUtcIso,
@@ -19,6 +22,13 @@ import {
 import { guessProspectIdFromFilename } from "../../../lib/guess-prospect-from-filename";
 import { guessProspectIdFromThreadHint } from "../../../lib/match-prospect-from-thread-hint";
 import { useProStatus } from "../../../lib/use-pro-status";
+import Sheet from "@/components/ui/Sheet";
+import { useToast } from "@/components/ui/Toast";
+import PageHeader from "@/components/ui/PageHeader";
+import EmptyState from "@/components/ui/EmptyState";
+import Card from "@/components/ui/Card";
+
+/* ── Types & constants ─────────────────────────────────────────── */
 
 type EventType = "text" | "note";
 
@@ -27,7 +37,7 @@ const EVENT_CONFIG: Record<EventType, { label: string; icon: typeof MessageSquar
   note: { label: "Note", icon: StickyNote, colorClass: "text-purple-400 border-purple-400/40" },
 };
 
-/** Older rows used date / call / hangout / etc. — treat like thread context unless it’s a real note. */
+/** Older rows used date / call / hangout / etc. — treat like thread context unless it's a real note. */
 function normalizeEventType(raw: string | null | undefined): EventType {
   return raw === "note" ? "note" : "text";
 }
@@ -64,7 +74,6 @@ function groupLogEntriesForDisplay(entries: LogEntry[]): LogDisplayGroup[] {
     }
   }
   for (const arr of byBatch.values()) {
-    // Oldest first so a screenshot reads top-to-bottom like the thread.
     arr.sort((a, x) => new Date(a.createdAt).getTime() - new Date(x.createdAt).getTime());
   }
   const groups: LogDisplayGroup[] = [];
@@ -90,7 +99,7 @@ function isReactionBody(body: string): boolean {
   return body.trim().toLowerCase().startsWith("reacted ");
 }
 
-/** One header row per contiguous run of the same kind (e.g. one “Text” for many bubbles). */
+/** One header row per contiguous run of the same kind (e.g. one "Text" for many bubbles). */
 function clusterBatchLinesByKind(entries: LogEntry[]): { label: string; entries: LogEntry[] }[] {
   const clusters: { label: string; entries: LogEntry[] }[] = [];
   for (const e of entries) {
@@ -106,14 +115,51 @@ function clusterBatchLinesByKind(entries: LogEntry[]): { label: string; entries:
 }
 
 function batchLineBubbleClass(entry: LogEntry): string {
-  if (isReactionBody(entry.body)) {
-    return "border-pink-400/25 bg-pink-500/[0.08]";
-  }
-  if (entry.direction === "inbound") {
-    return "border-slate-500/30 bg-slate-500/[0.08]";
-  }
+  if (isReactionBody(entry.body)) return "border-pink-400/25 bg-pink-500/[0.08]";
+  if (entry.direction === "inbound") return "border-slate-500/30 bg-slate-500/[0.08]";
   return "border-sky-500/25 bg-sky-950/40";
 }
+
+/* ── Day grouping ──────────────────────────────────────────────── */
+
+function getDayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getDayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+function groupTimestamp(g: LogDisplayGroup): string {
+  if (g.kind === "single") return g.entry.createdAt;
+  return g.entries.reduce(
+    (latest, e) => (new Date(e.createdAt).getTime() > new Date(latest).getTime() ? e.createdAt : latest),
+    g.entries[0].createdAt,
+  );
+}
+
+type DaySection = { dayLabel: string; groups: LogDisplayGroup[] };
+
+function groupByDay(groups: LogDisplayGroup[]): DaySection[] {
+  const map = new Map<string, DaySection>();
+  for (const g of groups) {
+    const ts = groupTimestamp(g);
+    const key = getDayKey(ts);
+    if (!map.has(key)) map.set(key, { dayLabel: getDayLabel(ts), groups: [] });
+    map.get(key)!.groups.push(g);
+  }
+  return Array.from(map.values());
+}
+
+/* ── Deep-link sync ────────────────────────────────────────────── */
 
 /** Deep-link from Home stack cards: /inbox?prospect=<uuid> */
 function SyncInboxProspectParam({
@@ -133,7 +179,10 @@ function SyncInboxProspectParam({
   return null;
 }
 
+/* ── Main page ─────────────────────────────────────────────────── */
+
 export default function ActivityLogPage() {
+  const { toast } = useToast();
   const supabaseRef = React.useRef<ReturnType<typeof getSupabaseClient> | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [hasEventTypeCol, setHasEventTypeCol] = React.useState(true);
@@ -143,7 +192,6 @@ export default function ActivityLogPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [filterProspectId, setFilterProspectId] = React.useState("");
 
-  // Manual log modal
   const [isLogOpen, setIsLogOpen] = React.useState(false);
   const [selectedProspectId, setSelectedProspectId] = React.useState("");
   const [logBody, setLogBody] = React.useState("");
@@ -151,6 +199,7 @@ export default function ActivityLogPage() {
   const [logWhen, setLogWhen] = React.useState(() => toLocalDatetimeInputValue(new Date()));
   const [isSending, setIsSending] = React.useState(false);
   const [logError, setLogError] = React.useState<string | null>(null);
+
   const [isEditOpen, setIsEditOpen] = React.useState(false);
   const [editingEntryId, setEditingEntryId] = React.useState<string | null>(null);
   const [editProspectId, setEditProspectId] = React.useState("");
@@ -163,7 +212,6 @@ export default function ActivityLogPage() {
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [deletingBatchId, setDeletingBatchId] = React.useState<string | null>(null);
 
-  // Screenshot modal
   const [isScreenshotOpen, setIsScreenshotOpen] = React.useState(false);
   const [screenshotProspectId, setScreenshotProspectId] = React.useState("");
   const [screenshotPreview, setScreenshotPreview] = React.useState<string | null>(null);
@@ -175,7 +223,7 @@ export default function ActivityLogPage() {
   const [screenshotError, setScreenshotError] = React.useState<string | null>(null);
   const [screenshotThreadTitle, setScreenshotThreadTitle] = React.useState<string | null>(null);
   const [screenshotMatchSource, setScreenshotMatchSource] = React.useState<"thread" | "filename" | null>(null);
-  const [importToast, setImportToast] = React.useState<string | null>(null);
+
   const [logGate, setLogGate] = React.useState<{
     counts: FreeLoggingCounts;
     hasImportBatchColumn: boolean;
@@ -203,7 +251,7 @@ export default function ActivityLogPage() {
     const mapRow = (
       row: Record<string, unknown>,
       eventFallback: boolean,
-      batchFallback: boolean
+      batchFallback: boolean,
     ): LogEntry => {
       const prospect = Array.isArray(row.prospects) ? row.prospects[0] : row.prospects;
       return {
@@ -281,8 +329,8 @@ export default function ActivityLogPage() {
 
     setEntries(
       (data ?? []).map((row) =>
-        mapRow(row as unknown as Record<string, unknown>, !eventCol, !batchCol)
-      )
+        mapRow(row as unknown as Record<string, unknown>, !eventCol, !batchCol),
+      ),
     );
     await refreshLogGate(client);
   }, [hasEventTypeCol, hasImportBatchCol, refreshLogGate]);
@@ -314,14 +362,12 @@ export default function ActivityLogPage() {
     setShowPaywall(true);
   };
 
-  // Manual log handler
+  /* ── Manual log handler ── */
+
   const handleLogEntry = async () => {
     const client = supabaseRef.current;
     if (!client) return;
-    if (legacyRosterBlock) {
-      openLegacyRosterPaywall();
-      return;
-    }
+    if (legacyRosterBlock) { openLegacyRosterPaywall(); return; }
     const snap = await fetchFreeLoggingCounts(client);
     setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
     if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
@@ -353,8 +399,7 @@ export default function ActivityLogPage() {
       } else { setLogError(insertError.message); setIsSending(false); return; }
     }
     const who = prospects.find((p) => p.id === selectedProspectId)?.name ?? "them";
-    setImportToast(`Logged · ${who}'s Active Charisma Score updated`);
-    window.setTimeout(() => setImportToast(null), 5000);
+    toast(`Logged · ${who}'s Active Charisma Score updated`, "success");
     setLogBody("");
     setLogWhen(toLocalDatetimeInputValue(new Date()));
     setIsLogOpen(false);
@@ -362,11 +407,12 @@ export default function ActivityLogPage() {
     await loadEntries(client);
   };
 
-  // Screenshot handlers
+  /* ── Screenshot handlers ── */
+
   const runScreenshotParse = React.useCallback(async (file: File) => {
     if (checked && freeUserOverRosterLimit(prospects.length, isPro)) {
       setScreenshotError(
-        "Free tier is 1 person on your roster. Upgrade to Pro to import screenshots, or remove people until you’re at one."
+        "Free tier is 1 person on your roster. Upgrade to Pro to import screenshots, or remove people until you're at one.",
       );
       setScreenshotThreadTitle(null);
       setScreenshotMatchSource(null);
@@ -445,10 +491,7 @@ export default function ActivityLogPage() {
   const handleSaveScreenshotMessages = async () => {
     const client = supabaseRef.current;
     if (!client || !screenshotProspectId || parsedMessages.length === 0) return;
-    if (legacyRosterBlock) {
-      openLegacyRosterPaywall();
-      return;
-    }
+    if (legacyRosterBlock) { openLegacyRosterPaywall(); return; }
     const snap = await fetchFreeLoggingCounts(client);
     setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
     if (checked && !isPro && !freeTierLoggingAllowed(isPro, checked, snap.counts, snap.hasImportBatchColumn)) {
@@ -514,10 +557,10 @@ export default function ActivityLogPage() {
     }).catch(() => {});
 
     const who = prospects.find((p) => p.id === screenshotProspectId)?.name ?? "them";
-    setImportToast(
-      `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s Active Charisma Score updated`
+    toast(
+      `Logged ${parsedMessages.length} bubble${parsedMessages.length === 1 ? "" : "s"} · ${who}'s Active Charisma Score updated`,
+      "success",
     );
-    window.setTimeout(() => setImportToast(null), 5000);
 
     setIsScreenshotOpen(false);
     setScreenshotFile(null);
@@ -542,6 +585,8 @@ export default function ActivityLogPage() {
     setScreenshotThreadTitle(null);
     setScreenshotMatchSource(null);
   };
+
+  /* ── Edit / delete ── */
 
   const handleOpenEditEntry = (entry: LogEntry) => {
     setEditingEntryId(entry.id);
@@ -592,19 +637,15 @@ export default function ActivityLogPage() {
     }
     if (
       !window.confirm(
-        `Delete this whole screenshot import for ${prospectName}? (${count} lines — one tap undo isn’t available.)`
+        `Delete this whole screenshot import for ${prospectName}? (${count} lines — one tap undo isn't available.)`,
       )
-    ) {
-      return;
-    }
+    ) return;
+
     setDeletingBatchId(batchId);
     setError(null);
     const { error: delErr } = await client.from("messages").delete().eq("import_batch_id", batchId);
     setDeletingBatchId(null);
-    if (delErr) {
-      setError(delErr.message);
-      return;
-    }
+    if (delErr) { setError(delErr.message); return; }
     if (editingEntryId) {
       setIsEditOpen(false);
       setEditingEntryId(null);
@@ -621,10 +662,7 @@ export default function ActivityLogPage() {
     setError(null);
     const { error: deleteError } = await client.from("messages").delete().eq("id", entry.id);
     setDeletingId(null);
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
-    }
+    if (deleteError) { setError(deleteError.message); return; }
     if (editingEntryId === entry.id) {
       setIsEditOpen(false);
       setEditingEntryId(null);
@@ -632,21 +670,20 @@ export default function ActivityLogPage() {
     await loadEntries(client);
   };
 
+  /* ── Derived data ── */
+
   const filtered = filterProspectId
     ? entries.filter((e) => e.prospectId === filterProspectId)
     : entries;
 
-  const displayGroups = React.useMemo(
-    () => groupLogEntriesForDisplay(filtered),
-    [filtered]
-  );
+  const displayGroups = React.useMemo(() => groupLogEntriesForDisplay(filtered), [filtered]);
+  const daySections = React.useMemo(() => groupByDay(displayGroups), [displayGroups]);
+
+  /* ── Gate-checked openers ── */
 
   const tryOpenScreenshot = async () => {
     const client = supabaseRef.current;
-    if (legacyRosterBlock) {
-      openLegacyRosterPaywall();
-      return;
-    }
+    if (legacyRosterBlock) { openLegacyRosterPaywall(); return; }
     if (client) {
       const snap = await fetchFreeLoggingCounts(client);
       setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
@@ -669,10 +706,7 @@ export default function ActivityLogPage() {
 
   const tryOpenManualLog = async () => {
     const client = supabaseRef.current;
-    if (legacyRosterBlock) {
-      openLegacyRosterPaywall();
-      return;
-    }
+    if (legacyRosterBlock) { openLegacyRosterPaywall(); return; }
     if (client) {
       const snap = await fetchFreeLoggingCounts(client);
       setLogGate({ counts: snap.counts, hasImportBatchColumn: snap.hasImportBatchColumn });
@@ -691,57 +725,64 @@ export default function ActivityLogPage() {
     setIsLogOpen(true);
   };
 
+  const sortedProspects = React.useMemo(
+    () => [...prospects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [prospects],
+  );
+
+  /* ── Render ─────────────────────────────────────────────────── */
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Suspense fallback={null}>
         <SyncInboxProspectParam prospects={prospects} setFilterProspectId={setFilterProspectId} />
       </Suspense>
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-wide">Your texts</h1>
-          <p className="text-sm text-[var(--rm-text-muted)]">
-            Upload a screenshot of the thread or type what happened (text vs note — same goal: context so Home and the
-            AI know what’s real).
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={tryOpenScreenshot}
-            className="flex items-center gap-2 border border-blue-400/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
-          >
-            <ImagePlus size={14} strokeWidth={1.25} />
-            Screenshot
-          </button>
-          <button
-            type="button"
-            onClick={tryOpenManualLog}
-            className="flex items-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
-          >
-            <Plus size={14} strokeWidth={1.25} />
-            Log
-          </button>
-        </div>
-      </header>
 
-      {legacyRosterBlock ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100/95">
+      <PageHeader
+        title="Your texts"
+        subtitle="Upload a screenshot of the thread or type what happened — context so Home and the AI know what's real."
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={tryOpenScreenshot}
+              className="flex items-center gap-2 rounded-lg border border-blue-400/50 px-3.5 py-2 text-[13px] text-blue-400 transition hover:border-blue-400 hover:bg-blue-400/10"
+            >
+              <ImagePlus size={15} strokeWidth={1.25} />
+              Screenshot
+            </button>
+            <button
+              type="button"
+              onClick={tryOpenManualLog}
+              className="flex items-center gap-2 rounded-lg border border-[var(--rm-text)] px-3.5 py-2 text-[13px] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)]"
+            >
+              <Plus size={15} strokeWidth={1.25} />
+              Log
+            </button>
+          </div>
+        }
+      />
+
+      {/* ── Alerts ── */}
+
+      {legacyRosterBlock && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100/95">
           <span>
-            You have more than <strong className="text-[var(--rm-text)]">1 person</strong> on your roster. Free tier
-            allows one — upgrade to keep logging and screenshot imports, or remove people until you&apos;re at one.
+            You have more than <strong className="text-[var(--rm-text)]">1 person</strong> on your roster.
+            Free tier allows one — upgrade to keep logging and screenshot imports, or remove people until you&apos;re at one.
           </span>
           <button
             type="button"
             onClick={openLegacyRosterPaywall}
-            className="shrink-0 border border-rose-400/50 px-3 py-1.5 text-[10px] uppercase tracking-[0.25em] text-rose-100 transition hover:bg-rose-400/15"
+            className="label shrink-0 rounded-lg border border-rose-400/50 px-3 py-1.5 text-rose-100 transition hover:bg-rose-400/15"
           >
             Upgrade
           </button>
         </div>
-      ) : null}
+      )}
 
-      {logBlocked ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
+      {logBlocked && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/95">
           <span>
             Free tier: one screenshot import (all bubbles in that batch) <em className="not-italic">or</em> one manual
             log — then upgrade for unlimited logging.
@@ -749,582 +790,460 @@ export default function ActivityLogPage() {
           <button
             type="button"
             onClick={openLogPaywall}
-            className="shrink-0 border border-amber-400/60 px-3 py-1.5 text-[10px] uppercase tracking-[0.25em] text-amber-200 transition hover:bg-amber-400/15"
+            className="label shrink-0 rounded-lg border border-amber-400/60 px-3 py-1.5 text-amber-200 transition hover:bg-amber-400/15"
           >
             Upgrade
           </button>
         </div>
-      ) : null}
+      )}
 
-      {error ? (
-        <div className="border border-rose-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-rose-400">
+      {error && (
+        <div className="rounded-lg border border-rose-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-rose-400">
           {error}
         </div>
-      ) : null}
+      )}
 
-      {importToast ? (
-        <div className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,24rem)] -translate-x-1/2 border border-emerald-500/40 bg-[var(--rm-bg-elevated)] px-4 py-3 text-center text-sm text-emerald-100/95 shadow-lg">
-          {importToast}
+      {!hasEventTypeCol && (
+        <div className="rounded-lg border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
+          Run <code className="font-mono text-[12px]">activity-log-migration.sql</code> in your Supabase SQL Editor to enable event types.
         </div>
-      ) : null}
+      )}
 
-      {!hasEventTypeCol ? (
-        <div className="border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
-          Run <code className="font-mono text-xs">activity-log-migration.sql</code> in your Supabase SQL Editor to enable event types.
+      {!hasImportBatchCol && (
+        <div className="rounded-lg border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
+          Run <code className="font-mono text-[12px]">messages-import-batch-migration.sql</code> to group screenshot imports and delete a whole batch at once.
         </div>
-      ) : null}
+      )}
 
-      {!hasImportBatchCol ? (
-        <div className="border border-amber-500/40 bg-[var(--rm-bg-elevated)] p-4 text-sm text-amber-400">
-          Run <code className="font-mono text-xs">messages-import-batch-migration.sql</code> to group screenshot imports and delete a whole batch at once.
-        </div>
-      ) : null}
+      {/* ── Filter ── */}
 
-      <label className="flex max-w-md flex-col gap-1 text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
-        <span>Filter by person</span>
+      <label className="flex max-w-xs flex-col gap-1">
+        <span className="label text-[var(--rm-text-muted)]">Filter by person</span>
         <select
           value={filterProspectId}
           onChange={(e) => setFilterProspectId(e.target.value)}
-          className="border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm font-normal normal-case tracking-normal text-[var(--rm-text)]"
+          className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)]"
         >
           <option value="">All people</option>
-          {[...prospects]
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.tier})
-              </option>
-            ))}
+          {sortedProspects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} ({p.tier})</option>
+          ))}
         </select>
       </label>
 
-      <div className="space-y-1.5">
-        {filtered.length === 0 ? (
-          <div className="border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-6 text-center">
-            <p className="text-sm text-[var(--rm-text-muted)]">
-              No activity yet. Upload a screenshot or tap "+ Log" to start.
+      {/* ── Feed ── */}
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={MessageSquare}
+          headline="No activity yet"
+          body="Upload a screenshot or tap Log to start tracking conversations."
+        />
+      ) : (
+        <div className="space-y-6">
+          {daySections.map((section) => (
+            <section key={section.dayLabel}>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="label text-[var(--rm-text-muted)]">{section.dayLabel}</span>
+                <div className="h-px flex-1 bg-[var(--rm-border)]" />
+              </div>
+
+              <div className="space-y-2">
+                {section.groups.map((group) => {
+                  if (group.kind === "single") {
+                    return <SingleEntryCard key={group.entry.id} entry={group.entry} onEdit={handleOpenEditEntry} onDelete={handleDeleteEntry} deletingId={deletingId} />;
+                  }
+                  return (
+                    <BatchCard
+                      key={group.batchId}
+                      group={group}
+                      hasImportBatchCol={hasImportBatchCol}
+                      deletingBatchId={deletingBatchId}
+                      deletingId={deletingId}
+                      onEdit={handleOpenEditEntry}
+                      onDelete={handleDeleteEntry}
+                      onDeleteBatch={handleDeleteImportBatch}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* ── Manual log sheet ── */}
+
+      <Sheet open={isLogOpen} onClose={() => setIsLogOpen(false)} title="Log text or note">
+        <div className="max-h-[70dvh] space-y-4 overflow-y-auto">
+          <label className="flex flex-col gap-1">
+            <span className={`label text-[var(--rm-text-muted)] ${!selectedProspectId && logError ? "!text-rose-400" : ""}`}>
+              Who {!selectedProspectId && logError ? "— pick someone" : ""}
+            </span>
+            <select
+              value={selectedProspectId}
+              onChange={(e) => { setSelectedProspectId(e.target.value); setLogError(null); }}
+              className={`rounded-lg border bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)] ${
+                !selectedProspectId && logError ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
+              }`}
+            >
+              <option value="">Select a prospect…</option>
+              {prospects.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>)}
+            </select>
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="label text-[var(--rm-text-muted)]">Log as</span>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
+                const cfg = EVENT_CONFIG[type];
+                const TypeIcon = cfg.icon;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setLogType(type)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] ${
+                      logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    <TypeIcon size={12} strokeWidth={1.25} />
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[12px] leading-snug text-[var(--rm-text-muted)]">
+              Text = thread-style context. Note = anything else you want the AI to remember (same data either way).
             </p>
           </div>
-        ) : (
-          displayGroups.map((group) => {
-            if (group.kind === "single") {
-              const entry = group.entry;
-              const reaction = isReactionBody(entry.body);
-              const config = reaction
-                ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
-                : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
-              const Icon = config.icon;
-              return (
-                <div
-                  key={entry.id}
-                  className="flex items-start gap-3 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-3"
-                >
-                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border ${config.colorClass}`}>
-                    <Icon size={14} strokeWidth={1.25} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold">{entry.prospectName}</p>
-                        <span className={`text-[10px] uppercase tracking-[0.2em] ${config.colorClass.split(" ")[0]}`}>
-                          {config.label}
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        <span className="mr-1 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                          {formatTime(entry.createdAt)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditEntry(entry)}
-                          className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
-                          aria-label="Edit entry"
-                          title="Edit"
-                        >
-                          <Pencil size={12} strokeWidth={1.5} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteEntry(entry)}
-                          disabled={deletingId === entry.id}
-                          className="flex h-8 w-8 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
-                          aria-label="Delete log entry"
-                          title="Delete"
-                        >
-                          {deletingId === entry.id ? (
-                            <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
-                          ) : (
-                            <Trash2 size={12} strokeWidth={1.5} />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--rm-text-muted)]">{entry.body}</p>
-                  </div>
-                </div>
-              );
-            }
 
-            const batch = group.entries;
-            const head = batch[0];
-            const lineClusters = clusterBatchLinesByKind(batch);
-            return (
-              <div
-                key={group.batchId}
-                className="border border-blue-500/30 bg-blue-500/[0.05] p-2 sm:p-2.5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-blue-500/15 pb-1.5">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <ImagePlus size={13} strokeWidth={1.25} className="shrink-0 text-blue-400/90" />
-                    <p className="text-sm font-semibold leading-tight">{head.prospectName}</p>
-                    <span className="text-[9px] uppercase tracking-[0.18em] text-blue-300/85">
-                      Screenshot import · {batch.length} lines
-                    </span>
-                  </div>
-                  {hasImportBatchCol ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteImportBatch(group.batchId, head.prospectName, batch.length)}
-                      disabled={deletingBatchId === group.batchId}
-                      className="flex shrink-0 items-center gap-1 border border-rose-500/40 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-rose-300/95 transition hover:bg-rose-500/15 disabled:opacity-40"
-                    >
-                      {deletingBatchId === group.batchId ? (
-                        <Loader2 size={11} className="animate-spin" strokeWidth={1.5} />
-                      ) : (
-                        <Trash2 size={11} strokeWidth={1.5} />
-                      )}
-                      Remove batch
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-1.5 space-y-1.5">
-                  {lineClusters.map((cluster, cIdx) => (
-                    <div key={`${group.batchId}-c${cIdx}`} className="space-y-0.5">
-                      <p
-                        className={`px-0.5 text-[8px] uppercase tracking-[0.22em] ${
-                          cluster.label === "Reaction"
-                            ? "text-pink-300/90"
-                            : "text-blue-200/75"
-                        }`}
-                      >
-                        {cluster.label}
-                      </p>
-                      <div className="space-y-0.5">
-                        {cluster.entries.map((entry) => (
-                          <div key={entry.id} className="flex items-start gap-1">
-                            <div
-                              className={`min-w-0 flex-1 rounded-md border px-2 py-1 text-xs leading-snug text-[var(--rm-text)] ${batchLineBubbleClass(
-                                entry
-                              )}`}
-                            >
-                              <p className="text-[var(--rm-text)]">{entry.body}</p>
-                              <p className="mt-0.5 text-[9px] uppercase tracking-wider text-[var(--rm-text-muted)]/90">
-                                {entry.direction === "inbound" ? "Them" : "You"} · {formatTime(entry.createdAt)}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 flex-col items-center gap-0 pt-0.5">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditEntry(entry)}
-                                className="flex h-6 w-6 items-center justify-center text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
-                                aria-label="Edit line"
-                                title="Edit"
-                              >
-                                <Pencil size={11} strokeWidth={1.5} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteEntry(entry)}
-                                disabled={deletingId === entry.id}
-                                className="flex h-6 w-6 items-center justify-center text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
-                                aria-label="Delete line"
-                                title="Delete this line only"
-                              >
-                                {deletingId === entry.id ? (
-                                  <Loader2 size={11} strokeWidth={1.5} className="animate-spin" />
-                                ) : (
-                                  <Trash2 size={11} strokeWidth={1.5} />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+          <details className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
+            <summary className="label cursor-pointer text-[var(--rm-text-muted)]">
+              When · defaults to now
+            </summary>
+            <label className="mt-3 flex flex-col gap-1 border-t border-[var(--rm-border)] pt-3">
+              <span className="label flex items-center gap-1.5 text-[var(--rm-text-muted)]">
+                <Calendar size={12} strokeWidth={1.25} />
+                Time
+              </span>
+              <input
+                type="datetime-local"
+                value={logWhen}
+                onChange={(e) => setLogWhen(e.target.value)}
+                className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-sm text-[var(--rm-text)]"
+              />
+            </label>
+          </details>
 
-      {/* Manual Log Modal */}
-      {isLogOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
-          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Log text or note</h2>
-              <button type="button" onClick={() => setIsLogOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>
-            </div>
-            <div className="mt-4 space-y-4">
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className={!selectedProspectId && logError ? "text-rose-400" : ""}>
-                  Who {!selectedProspectId && logError ? "— pick someone" : ""}
-                </span>
-                <select
-                  value={selectedProspectId}
-                  onChange={(e) => { setSelectedProspectId(e.target.value); setLogError(null); }}
-                  className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${
-                    !selectedProspectId && logError ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
-                  }`}
-                >
-                  <option value="">Select a prospect...</option>
-                  {prospects.map((p) => (<option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>))}
-                </select>
-              </label>
-              <div className="space-y-1">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">Log as</p>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
-                    const cfg = EVENT_CONFIG[type];
-                    const TypeIcon = cfg.icon;
-                    return (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setLogType(type)}
-                        className={`flex items-center gap-1.5 border px-2 py-1.5 text-[10px] uppercase tracking-[0.15em] ${
-                          logType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-                        }`}
-                      >
-                        <TypeIcon size={11} strokeWidth={1.25} />
-                        {cfg.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] normal-case leading-snug text-[var(--rm-text-muted)]/90">
-                  Text = thread-style context. Note = anything else you want the AI to remember (same data either way).
-                </p>
-              </div>
-              <details className="rounded border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
-                <summary className="cursor-pointer text-[10px] uppercase tracking-[0.25em] text-[var(--rm-text-muted)]">
-                  When · defaults to now
-                </summary>
-                <label className="mt-3 flex flex-col gap-1 border-t border-[var(--rm-border)] pt-3 text-[10px] uppercase tracking-[0.2em] text-[var(--rm-text-muted)]">
-                  <span className="flex items-center gap-1.5">
-                    <Calendar size={11} strokeWidth={1.25} />
-                    Time
-                  </span>
-                  <input
-                    type="datetime-local"
-                    value={logWhen}
-                    onChange={(e) => setLogWhen(e.target.value)}
-                    className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-2 text-sm normal-case text-[var(--rm-text)]"
-                  />
-                </label>
-              </details>
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className={!logBody.trim() && logError?.includes("details") ? "text-rose-400" : ""}>
-                  Details {!logBody.trim() && logError?.includes("details") ? "— add something" : ""}
-                </span>
-                <textarea
-                  value={logBody} onChange={(e) => { setLogBody(e.target.value); setLogError(null); }} rows={3}
-                  placeholder={
-                    logType === "text"
-                      ? "What was said or happening in the thread — paste or summarize; same idea as a screenshot import."
-                      : "What you want remembered in plain English (date, call, vibe, context) — the AI reads the words, not the label."
-                  }
-                  className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${!logBody.trim() && logError?.includes("details") ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"}`}
-                />
-              </label>
-              {logError ? (<div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">{logError}</div>) : null}
-              <button type="button" onClick={() => { setLogError(null); handleLogEntry(); }} disabled={isSending} className="flex w-full items-center justify-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60">
-                {isSending ? "Saving..." : "Log It"}
-              </button>
-            </div>
-          </div>
+          <label className="flex flex-col gap-1">
+            <span className={`label text-[var(--rm-text-muted)] ${!logBody.trim() && logError?.includes("details") ? "!text-rose-400" : ""}`}>
+              Details {!logBody.trim() && logError?.includes("details") ? "— add something" : ""}
+            </span>
+            <textarea
+              value={logBody}
+              onChange={(e) => { setLogBody(e.target.value); setLogError(null); }}
+              rows={3}
+              placeholder={
+                logType === "text"
+                  ? "What was said or happening in the thread — paste or summarize; same idea as a screenshot import."
+                  : "What you want remembered in plain English (date, call, vibe, context) — the AI reads the words, not the label."
+              }
+              className={`rounded-lg border bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)] ${
+                !logBody.trim() && logError?.includes("details") ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
+              }`}
+            />
+          </label>
+
+          {logError && (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-[13px] text-rose-400">{logError}</div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => { setLogError(null); handleLogEntry(); }}
+            disabled={isSending}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--rm-text)] px-4 py-2.5 text-[13px] font-medium transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSending ? "Saving…" : "Log it"}
+          </button>
         </div>
-      ) : null}
+      </Sheet>
 
-      {/* Screenshot Upload Modal — upload first, auto-read, one-tap add all */}
-      {isScreenshotOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
-          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Screenshot</h2>
-              <button type="button" onClick={resetScreenshotModal} className="text-[var(--rm-text-muted)]">
-                <X size={18} strokeWidth={1.25} />
-              </button>
-            </div>
+      {/* ── Screenshot sheet ── */}
 
-            <div className="mt-4 space-y-4">
-              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+      <Sheet open={isScreenshotOpen} onClose={resetScreenshotModal} title="Screenshot import">
+        <div className="max-h-[70dvh] space-y-4 overflow-y-auto">
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
 
-              {!screenshotPreview ? (
+          {!screenshotPreview ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full flex-col items-center gap-3 rounded-lg border-2 border-dashed border-blue-500/35 bg-blue-500/5 p-8 transition hover:border-blue-400/55"
+            >
+              <ImagePlus size={32} strokeWidth={1} className="text-blue-400/80" />
+              <span className="text-[13px] text-blue-200/90">Tap to choose screenshot</span>
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <div className="relative">
+                <img src={screenshotPreview} alt="Screenshot" className="w-full rounded-lg border border-[var(--rm-border)]" />
+                {isParsing && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/55">
+                    <Loader2 size={22} strokeWidth={1.25} className="animate-spin text-blue-400" />
+                    <span className="label text-blue-200/95">Reading…</span>
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full flex-col items-center gap-3 border-2 border-dashed border-blue-500/35 bg-blue-500/5 p-8 transition hover:border-blue-400/55"
+                  onClick={() => {
+                    setScreenshotFile(null);
+                    setScreenshotPreview(null);
+                    setParsedMessages([]);
+                    setScreenshotFilenameLabel("");
+                    setScreenshotThreadTitle(null);
+                    setScreenshotMatchSource(null);
+                    setScreenshotError(null);
+                  }}
+                  className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md bg-black/75 text-white"
+                  aria-label="Remove image"
                 >
-                  <ImagePlus size={32} strokeWidth={1} className="text-blue-400/80" />
-                  <span className="text-xs uppercase tracking-[0.3em] text-blue-200/90">
-                    Tap to choose screenshot
-                  </span>
+                  <Trash2 size={13} strokeWidth={1.5} />
                 </button>
-              ) : (
-                <div className="space-y-2">
-                  <div className="relative">
-                    <img src={screenshotPreview} alt="Screenshot" className="w-full border border-[var(--rm-border)]" />
-                    {isParsing ? (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/55">
-                        <Loader2 size={22} strokeWidth={1.25} className="animate-spin text-blue-400" />
-                        <span className="text-[10px] uppercase tracking-[0.25em] text-blue-200/95">Reading…</span>
-                      </div>
-                    ) : null}
+              </div>
+              {screenshotFilenameLabel && (
+                <p className="text-[12px] text-[var(--rm-text-muted)]">
+                  <span className="label">File</span> · {screenshotFilenameLabel}
+                </p>
+              )}
+              {screenshotThreadTitle && (
+                <p className="text-[12px] text-[var(--rm-text-muted)]">
+                  <span className="label">Chat header</span> · {screenshotThreadTitle}
+                </p>
+              )}
+            </div>
+          )}
+
+          {parsedMessages.length > 0 && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className={`label text-[var(--rm-text-muted)] ${!screenshotProspectId && screenshotError ? "!text-rose-400" : ""}`}>
+                  Who is this thread with?
+                </span>
+                <select
+                  value={screenshotProspectId}
+                  onChange={(e) => {
+                    setScreenshotProspectId(e.target.value);
+                    setScreenshotError(null);
+                    setScreenshotMatchSource(null);
+                  }}
+                  className={`rounded-lg border bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)] ${
+                    !screenshotProspectId && screenshotError ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
+                  }`}
+                >
+                  <option value="">Select…</option>
+                  {prospects.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.tier})</option>)}
+                </select>
+              </label>
+
+              {screenshotMatchSource === "thread" && screenshotProspectId && (
+                <p className="text-[12px] text-emerald-400/90">
+                  Picked{" "}
+                  <span className="font-medium text-emerald-200/95">
+                    {prospects.find((p) => p.id === screenshotProspectId)?.name ?? "roster match"}
+                  </span>{" "}
+                  from the chat header{screenshotThreadTitle ? ` ("${screenshotThreadTitle}")` : ""} — change if wrong.
+                </p>
+              )}
+              {screenshotMatchSource === "filename" && screenshotProspectId && (
+                <p className="text-[12px] text-emerald-400/90">
+                  Matched roster from filename — change above if wrong.
+                </p>
+              )}
+
+              <p className="text-[12px] text-[var(--rm-text-muted)]">
+                {parsedMessages.length} message{parsedMessages.length === 1 ? "" : "s"} · tap{" "}
+                <span className="text-sky-300/90">Flip</span> if a bubble is on the wrong side (fixes Home Active Charisma).
+              </p>
+
+              <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
+                {parsedMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={`flex flex-col gap-0.5 ${msg.direction === "outbound" ? "items-end" : "items-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-lg px-3 py-2 text-[13px] ${
+                        msg.direction === "outbound"
+                          ? "bg-blue-500/20 text-blue-200/95"
+                          : "bg-[var(--rm-bg-elevated)] text-[var(--rm-text-muted)]"
+                      }`}
+                    >
+                      {msg.body}
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
-                        setScreenshotFile(null);
-                        setScreenshotPreview(null);
-                        setParsedMessages([]);
-                        setScreenshotFilenameLabel("");
-                        setScreenshotThreadTitle(null);
-                        setScreenshotMatchSource(null);
-                        setScreenshotError(null);
+                        setParsedMessages((prev) =>
+                          prev.map((m, j) =>
+                            j === i
+                              ? { ...m, direction: m.direction === "inbound" ? "outbound" : "inbound" }
+                              : m,
+                          ),
+                        );
                       }}
-                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center bg-black/75 text-white"
-                      aria-label="Remove image"
+                      className="text-[11px] text-sky-400/90 transition hover:text-sky-300"
                     >
-                      <X size={14} />
+                      Flip → {msg.direction === "outbound" ? "Them" : "You"}
                     </button>
                   </div>
-                  {screenshotFilenameLabel ? (
-                    <p className="text-[10px] text-[var(--rm-text-muted)]">
-                      <span className="uppercase tracking-[0.2em]">File</span> · {screenshotFilenameLabel}
-                    </p>
-                  ) : null}
-                  {screenshotThreadTitle ? (
-                    <p className="text-[10px] text-[var(--rm-text-muted)]">
-                      <span className="uppercase tracking-[0.2em]">Chat header</span> · {screenshotThreadTitle}
-                    </p>
-                  ) : null}
-                </div>
-              )}
-
-              {parsedMessages.length > 0 ? (
-                <>
-                  <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                    <span className={!screenshotProspectId && screenshotError ? "text-rose-400" : ""}>
-                      Who is this thread with?
-                    </span>
-                    <select
-                      value={screenshotProspectId}
-                      onChange={(e) => {
-                        setScreenshotProspectId(e.target.value);
-                        setScreenshotError(null);
-                        setScreenshotMatchSource(null);
-                      }}
-                      className={`mt-1 border bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)] ${
-                        !screenshotProspectId && screenshotError ? "border-rose-500 ring-1 ring-rose-500/50" : "border-[var(--rm-border)]"
-                      }`}
-                    >
-                      <option value="">Select…</option>
-                      {prospects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.tier})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {screenshotMatchSource === "thread" && screenshotProspectId ? (
-                    <p className="text-[10px] text-emerald-400/90">
-                      Picked{" "}
-                      <span className="font-medium text-emerald-200/95">
-                        {prospects.find((p) => p.id === screenshotProspectId)?.name ?? "roster match"}
-                      </span>{" "}
-                      from the chat header{screenshotThreadTitle ? ` (“${screenshotThreadTitle}”)` : ""} — change if wrong.
-                    </p>
-                  ) : null}
-                  {screenshotMatchSource === "filename" && screenshotProspectId ? (
-                    <p className="text-[10px] text-emerald-400/90">
-                      Matched roster from filename — change above if wrong.
-                    </p>
-                  ) : null}
-
-                  <p className="text-[10px] text-[var(--rm-text-muted)]">
-                    {parsedMessages.length} message{parsedMessages.length === 1 ? "" : "s"} · tap{" "}
-                    <span className="text-sky-300/90">Flip</span> if a bubble is on the wrong side (fixes Home Active
-                    Charisma).
-                  </p>
-                  <div className="max-h-52 space-y-1.5 overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg)] p-3">
-                    {parsedMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`flex flex-col gap-0.5 ${msg.direction === "outbound" ? "items-end" : "items-start"}`}
-                      >
-                        <div
-                          className={`max-w-[85%] border border-transparent px-3 py-2 text-xs ${
-                            msg.direction === "outbound"
-                              ? "bg-blue-500/20 text-blue-200/95"
-                              : "bg-[var(--rm-bg-elevated)] text-[var(--rm-text-muted)]"
-                          }`}
-                        >
-                          {msg.body}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParsedMessages((prev) =>
-                              prev.map((m, j) =>
-                                j === i
-                                  ? {
-                                      ...m,
-                                      direction: m.direction === "inbound" ? "outbound" : "inbound",
-                                    }
-                                  : m
-                              )
-                            );
-                          }}
-                          className="text-[9px] uppercase tracking-[0.15em] text-sky-400/90 transition hover:text-sky-300"
-                        >
-                          Flip → {msg.direction === "outbound" ? "Them" : "You"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!screenshotProspectId) {
-                        setScreenshotError("Pick who this thread is with.");
-                        return;
-                      }
-                      void handleSaveScreenshotMessages();
-                    }}
-                    disabled={isSavingScreenshot}
-                    className="flex w-full items-center justify-center gap-2 border border-emerald-500/50 bg-emerald-500/15 px-4 py-3 text-xs font-medium uppercase tracking-[0.28em] text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-60"
-                  >
-                    {isSavingScreenshot ? "Saving…" : `Add ${parsedMessages.length} to log`}
-                  </button>
-                </>
-              ) : null}
-
-              {screenshotError ? (
-                <div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">{screenshotError}</div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* Edit Log Entry Modal */}
-      {isEditOpen ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 px-4 py-8 sm:px-6">
-          <div className="max-h-[min(92dvh,calc(100vh-2rem))] w-full max-w-md overflow-y-auto border border-[var(--rm-border)] bg-[var(--rm-bg-elevated)] p-4 pb-8 sm:p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.3em]">Edit Activity</h2>
-              <button type="button" onClick={() => setIsEditOpen(false)} className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Close</button>
-            </div>
-            <div className="mt-4 space-y-4">
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                Who
-                <select
-                  value={editProspectId}
-                  onChange={(e) => setEditProspectId(e.target.value)}
-                  className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]"
-                >
-                  <option value="">Select a prospect...</option>
-                  {prospects.map((p) => (<option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>))}
-                </select>
-              </label>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Log as</p>
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
-                    const cfg = EVENT_CONFIG[type];
-                    const TypeIcon = cfg.icon;
-                    return (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setEditType(type)}
-                        className={`flex items-center gap-1.5 border px-3 py-2 text-xs uppercase tracking-[0.2em] ${
-                          editType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-                        }`}
-                      >
-                        <TypeIcon size={12} strokeWidth={1.25} />
-                        {cfg.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                ))}
               </div>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">Who sent this line</p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditDirection("outbound")}
-                    className={`border px-3 py-2 text-xs uppercase tracking-[0.2em] transition ${
-                      editDirection === "outbound"
-                        ? "border-sky-500/60 bg-sky-500/15 text-sky-200/95"
-                        : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-                    }`}
-                  >
-                    You
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditDirection("inbound")}
-                    className={`border px-3 py-2 text-xs uppercase tracking-[0.2em] transition ${
-                      editDirection === "inbound"
-                        ? "border-slate-400/50 bg-slate-500/15 text-slate-200/95"
-                        : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
-                    }`}
-                  >
-                    Them
-                  </button>
-                </div>
-                <p className="text-[10px] normal-case tracking-normal text-[var(--rm-text-muted)]">
-                  Screenshot import sometimes flips sides — wrong choice here is why Home says “you texted last.”
-                </p>
-              </div>
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                <span className="flex items-center gap-1.5"><Calendar size={12} strokeWidth={1.25} />When</span>
-                <input type="datetime-local" value={editWhen} onChange={(e) => setEditWhen(e.target.value)} className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]" />
-              </label>
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.3em] text-[var(--rm-text-muted)]">
-                Details
-                <textarea
-                  value={editBody}
-                  onChange={(e) => setEditBody(e.target.value)}
-                  rows={3}
-                  className="mt-1 border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm normal-case text-[var(--rm-text)]"
-                />
-              </label>
-              {editError ? (<div className="border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-400">{editError}</div>) : null}
-              <button type="button" onClick={handleUpdateEntry} disabled={isUpdating} className="flex w-full items-center justify-center gap-2 border border-[var(--rm-text)] px-4 py-2 text-xs uppercase tracking-[0.3em] transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60">
-                {isUpdating ? "Saving..." : "Save Changes"}
-              </button>
+
               <button
                 type="button"
                 onClick={() => {
-                  const e = entries.find((x) => x.id === editingEntryId);
-                  if (e) void handleDeleteEntry(e);
+                  if (!screenshotProspectId) {
+                    setScreenshotError("Pick who this thread is with.");
+                    return;
+                  }
+                  void handleSaveScreenshotMessages();
                 }}
-                disabled={isUpdating || deletingId === editingEntryId}
-                className="flex w-full items-center justify-center gap-2 border border-rose-900/50 px-4 py-2 text-xs uppercase tracking-[0.3em] text-rose-400/90 transition hover:border-rose-700/60 hover:bg-rose-950/30 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={isSavingScreenshot}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/50 bg-emerald-500/15 px-4 py-3 text-[13px] font-medium text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-60"
               >
-                <Trash2 size={12} strokeWidth={1.5} />
-                Delete log
+                {isSavingScreenshot ? "Saving…" : `Add ${parsedMessages.length} to log`}
               </button>
+            </>
+          )}
+
+          {screenshotError && (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-[13px] text-rose-400">{screenshotError}</div>
+          )}
+        </div>
+      </Sheet>
+
+      {/* ── Edit entry sheet ── */}
+
+      <Sheet open={isEditOpen} onClose={() => setIsEditOpen(false)} title="Edit entry">
+        <div className="max-h-[70dvh] space-y-4 overflow-y-auto">
+          <label className="flex flex-col gap-1">
+            <span className="label text-[var(--rm-text-muted)]">Who</span>
+            <select
+              value={editProspectId}
+              onChange={(e) => setEditProspectId(e.target.value)}
+              className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)]"
+            >
+              <option value="">Select a prospect…</option>
+              {prospects.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.tier}-Tier)</option>)}
+            </select>
+          </label>
+
+          <div className="space-y-1.5">
+            <span className="label text-[var(--rm-text-muted)]">Log as</span>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(EVENT_CONFIG) as EventType[]).map((type) => {
+                const cfg = EVENT_CONFIG[type];
+                const TypeIcon = cfg.icon;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setEditType(type)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] ${
+                      editType === type ? cfg.colorClass : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                    }`}
+                  >
+                    <TypeIcon size={12} strokeWidth={1.25} />
+                    {cfg.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          <div className="space-y-1.5">
+            <span className="label text-[var(--rm-text-muted)]">Who sent this line</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setEditDirection("outbound")}
+                className={`rounded-lg border px-3 py-1.5 text-[12px] transition ${
+                  editDirection === "outbound"
+                    ? "border-sky-500/60 bg-sky-500/15 text-sky-200/95"
+                    : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                }`}
+              >
+                You
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditDirection("inbound")}
+                className={`rounded-lg border px-3 py-1.5 text-[12px] transition ${
+                  editDirection === "inbound"
+                    ? "border-slate-400/50 bg-slate-500/15 text-slate-200/95"
+                    : "border-[var(--rm-border)] text-[var(--rm-text-muted)]"
+                }`}
+              >
+                Them
+              </button>
+            </div>
+            <p className="text-[12px] text-[var(--rm-text-muted)]">
+              Screenshot import sometimes flips sides — wrong choice here is why Home says &ldquo;you texted last.&rdquo;
+            </p>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="label flex items-center gap-1.5 text-[var(--rm-text-muted)]">
+              <Calendar size={12} strokeWidth={1.25} />
+              When
+            </span>
+            <input
+              type="datetime-local"
+              value={editWhen}
+              onChange={(e) => setEditWhen(e.target.value)}
+              className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)]"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="label text-[var(--rm-text-muted)]">Details</span>
+            <textarea
+              value={editBody}
+              onChange={(e) => setEditBody(e.target.value)}
+              rows={3}
+              className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-bg)] p-2 text-sm text-[var(--rm-text)]"
+            />
+          </label>
+
+          {editError && (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-[13px] text-rose-400">{editError}</div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleUpdateEntry}
+            disabled={isUpdating}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--rm-text)] px-4 py-2.5 text-[13px] font-medium transition hover:bg-[var(--rm-text)] hover:text-[var(--rm-bg)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isUpdating ? "Saving…" : "Save changes"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const e = entries.find((x) => x.id === editingEntryId);
+              if (e) void handleDeleteEntry(e);
+            }}
+            disabled={isUpdating || deletingId === editingEntryId}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-900/50 px-4 py-2.5 text-[13px] text-rose-400/90 transition hover:border-rose-700/60 hover:bg-rose-950/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 size={13} strokeWidth={1.5} />
+            Delete entry
+          </button>
         </div>
-      ) : null}
+      </Sheet>
 
       <PaywallModal
         isOpen={showPaywall}
@@ -1334,6 +1253,173 @@ export default function ActivityLogPage() {
     </div>
   );
 }
+
+/* ── Sub-components ────────────────────────────────────────────── */
+
+function SingleEntryCard({
+  entry,
+  onEdit,
+  onDelete,
+  deletingId,
+}: {
+  entry: LogEntry;
+  onEdit: (e: LogEntry) => void;
+  onDelete: (e: LogEntry) => Promise<void>;
+  deletingId: string | null;
+}) {
+  const reaction = isReactionBody(entry.body);
+  const config = reaction
+    ? { label: "Reaction", icon: Heart, colorClass: "text-pink-300 border-pink-300/40" }
+    : (EVENT_CONFIG[entry.eventType] ?? EVENT_CONFIG.text);
+  const Icon = config.icon;
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${config.colorClass}`}>
+          <Icon size={14} strokeWidth={1.25} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold">{entry.prospectName}</p>
+              <span className={`text-[11px] font-medium ${config.colorClass.split(" ")[0]}`}>
+                {config.label}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <span className="mr-1 text-[11px] text-[var(--rm-text-muted)]">
+                {formatTime(entry.createdAt)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onEdit(entry)}
+                className="flex h-7 w-7 items-center justify-center rounded text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                aria-label="Edit entry"
+                title="Edit"
+              >
+                <Pencil size={12} strokeWidth={1.5} />
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDelete(entry)}
+                disabled={deletingId === entry.id}
+                className="flex h-7 w-7 items-center justify-center rounded text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                aria-label="Delete"
+                title="Delete"
+              >
+                {deletingId === entry.id
+                  ? <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
+                  : <Trash2 size={12} strokeWidth={1.5} />}
+              </button>
+            </div>
+          </div>
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--rm-text-muted)]">{entry.body}</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function BatchCard({
+  group,
+  hasImportBatchCol,
+  deletingBatchId,
+  deletingId,
+  onEdit,
+  onDelete,
+  onDeleteBatch,
+}: {
+  group: { batchId: string; entries: LogEntry[] };
+  hasImportBatchCol: boolean;
+  deletingBatchId: string | null;
+  deletingId: string | null;
+  onEdit: (e: LogEntry) => void;
+  onDelete: (e: LogEntry) => Promise<void>;
+  onDeleteBatch: (batchId: string, name: string, count: number) => Promise<void>;
+}) {
+  const batch = group.entries;
+  const head = batch[0];
+  const lineClusters = clusterBatchLinesByKind(batch);
+
+  return (
+    <Card
+      header={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <ImagePlus size={14} strokeWidth={1.25} className="shrink-0 text-blue-400/80" />
+            <p className="text-sm font-semibold">{head.prospectName}</p>
+            <span className="text-[11px] font-medium text-blue-400/80">
+              Screenshot · {batch.length} lines
+            </span>
+          </div>
+          {hasImportBatchCol && (
+            <button
+              type="button"
+              onClick={() => void onDeleteBatch(group.batchId, head.prospectName, batch.length)}
+              disabled={deletingBatchId === group.batchId}
+              className="flex shrink-0 items-center gap-1 rounded-md border border-rose-500/40 px-2 py-1 text-[11px] font-medium text-rose-300/95 transition hover:bg-rose-500/15 disabled:opacity-40"
+            >
+              {deletingBatchId === group.batchId
+                ? <Loader2 size={11} className="animate-spin" strokeWidth={1.5} />
+                : <Trash2 size={11} strokeWidth={1.5} />}
+              Remove batch
+            </button>
+          )}
+        </div>
+      }
+    >
+      <div className="space-y-2">
+        {lineClusters.map((cluster, cIdx) => (
+          <div key={`${group.batchId}-c${cIdx}`} className="space-y-1">
+            <p className={`label px-0.5 ${cluster.label === "Reaction" ? "text-pink-300/90" : "text-blue-300/70"}`}>
+              {cluster.label}
+            </p>
+            <div className="space-y-1">
+              {cluster.entries.map((entry) => (
+                <div key={entry.id} className={`flex gap-1 ${entry.direction === "outbound" ? "flex-row-reverse" : ""}`}>
+                  <div
+                    className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-[13px] leading-snug text-[var(--rm-text)] ${batchLineBubbleClass(entry)}`}
+                  >
+                    <p>{entry.body}</p>
+                    <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]/90">
+                      {entry.direction === "inbound" ? "Them" : "You"} · {formatTime(entry.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-center gap-0 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(entry)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)]/70 transition hover:text-[var(--rm-text)]"
+                      aria-label="Edit line"
+                      title="Edit"
+                    >
+                      <Pencil size={11} strokeWidth={1.5} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(entry)}
+                      disabled={deletingId === entry.id}
+                      className="flex h-6 w-6 items-center justify-center rounded text-[var(--rm-text-muted)]/50 transition hover:text-rose-400 disabled:opacity-30"
+                      aria-label="Delete line"
+                      title="Delete this line only"
+                    >
+                      {deletingId === entry.id
+                        ? <Loader2 size={11} strokeWidth={1.5} className="animate-spin" />
+                        : <Trash2 size={11} strokeWidth={1.5} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ── Helpers ────────────────────────────────────────────────────── */
 
 function formatTime(iso: string): string {
   const d = new Date(iso);

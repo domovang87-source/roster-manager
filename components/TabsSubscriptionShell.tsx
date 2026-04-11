@@ -19,7 +19,7 @@ export default function TabsSubscriptionShell({ children }: { children: React.Re
         aria-busy="true"
       >
         <Loader2 className="h-10 w-10 animate-spin text-white/85" aria-hidden />
-        <p className="mt-5 max-w-xs text-center text-[10px] uppercase tracking-[0.35em] text-white/40">
+        <p className="mt-5 max-w-xs text-center text-[11px] uppercase tracking-[0.2em] text-white/40">
           Verifying subscription…
         </p>
       </div>

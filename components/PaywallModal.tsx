@@ -115,7 +115,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           </button>
         ) : null}
 
-        <p className="text-[10px] uppercase tracking-[0.35em] text-[var(--rm-text-muted)]">
+        <p className="text-[11px] uppercase tracking-[0.1em] text-[var(--rm-text-muted)]">
           {feature ? `${feature}` : "STACK Pro"}
         </p>
         <h2 id="paywall-title" className="mt-1.5 text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
@@ -133,7 +133,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
         <div className="mt-5 border-2 border-emerald-500/40 bg-emerald-500/[0.06] p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-emerald-400/95">Pro · recommended</p>
+              <p className="text-[11px] uppercase tracking-[0.1em] text-emerald-400/95">Pro · recommended</p>
               <p className="mt-2 text-2xl font-semibold tabular-nums text-[var(--rm-text)]">{proPrice}</p>
               <p className="mt-0.5 text-[11px] text-[var(--rm-text-muted)]">{proSub}</p>
             </div>
@@ -161,7 +161,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
             </ul>
           </details>
 
-          <p className="mt-4 text-[10px] leading-snug text-[var(--rm-text-muted)]">
+          <p className="mt-4 text-[11px] leading-snug text-[var(--rm-text-muted)]">
             Charged securely by Stripe · Apple Pay, Link, and cards on the next screen
           </p>
 
@@ -178,7 +178,7 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
             Cancel anytime — no long contract. Manage billing from Logic Lab when you&apos;re signed in.
           </p>
 
-          <p className="mt-3 text-center text-[10px] text-[var(--rm-text-muted)]">
+          <p className="mt-3 text-center text-[11px] text-[var(--rm-text-muted)]">
             <button
               type="button"
               onClick={() => setPlan(plan === "monthly" ? "yearly" : "monthly")}
@@ -193,17 +193,17 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
           <summary className="cursor-pointer list-none text-sm font-medium text-amber-200/95 [&::-webkit-details-marker]:hidden">
             <span className="flex items-center justify-between gap-2">
               <span>Elite — coaching + unlimited regen · {elitePrice}</span>
-              <span className="text-[10px] font-normal uppercase tracking-wider text-amber-200/60 group-open:hidden">
+              <span className="text-[11px] font-normal uppercase tracking-[0.1em] text-amber-200/60 group-open:hidden">
                 Optional
               </span>
             </span>
           </summary>
           <p className="mt-2 text-[11px] leading-snug text-[var(--rm-text-muted)]">{eliteSub}</p>
-          <p className="mt-2 text-[10px] text-amber-200/75">
+          <p className="mt-2 text-[11px] text-amber-200/75">
             Everything in Pro, plus advanced tones, unlimited regenerations per draft, and priority access to Domo for
             roster help.
           </p>
-          <ul className="mt-3 max-h-32 space-y-1 overflow-y-auto text-[10px] text-[var(--rm-text-muted)]">
+          <ul className="mt-3 max-h-32 space-y-1 overflow-y-auto text-[11px] text-[var(--rm-text-muted)]">
             {ELITE_ONLY_PERKS.map((perk) => (
               <li key={perk} className="flex gap-2">
                 <Check size={11} className="mt-0.5 shrink-0 text-amber-400/90" strokeWidth={2} />
@@ -215,12 +215,12 @@ export default function PaywallModal({ isOpen, onClose, feature, locked = false 
             type="button"
             onClick={() => handleSubscribe("elite")}
             disabled={loading !== null}
-            className="mt-4 w-full rounded-full border border-amber-500/55 bg-transparent py-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-100 transition hover:bg-amber-500/10 disabled:opacity-60"
+            className="mt-4 w-full rounded-full border border-amber-500/55 bg-transparent py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-100 transition hover:bg-amber-500/10 disabled:opacity-60"
           >
             {loading === "elite" ? "Opening checkout…" : continueEliteLabel}
           </button>
 
-          <p className="mt-2.5 text-center text-[10px] leading-snug text-[var(--rm-text-muted)]">
+          <p className="mt-2.5 text-center text-[11px] leading-snug text-[var(--rm-text-muted)]">
             Cancel anytime — same billing controls as Pro (Logic Lab → manage subscription).
           </p>
         </details>
